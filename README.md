@@ -2,7 +2,7 @@ Central University Electronic Health Records (EHR) System
 
 ## Project Overview
 
-This is a **web-based Electronic Health Records (EHR) system** designed for a university hospital/clinic serving approximately **200 students** with a **21-bed** capacity. The system is built using **Django** (Python web framework) and **PostgreSQL** database, focusing on secure, role-based access for hospital staff.
+This is a **web-based Electronic Health Records (EHR) system** designed for a university hospital/clinic serving students and staff alike. This system will be used on three different three independent university campuses (Miosto, Accra, and Kumasi). The system is built using **Django** (Python web framework) and **PostgreSQL** database, focusing on secure, role-based access for hospital staff.
 
 The application follows a simple, linear patient workflow suitable for a small-scale university health service.
 
@@ -19,17 +19,17 @@ The application follows a simple, linear patient workflow suitable for a small-s
 ### Core Workflow
 
 1. **Patient Arrival & Registration** (Receptionist)
-   - New patient: Register with Student ID, Ghana Card/NHIS, DOB, address, emergency contacts, multiple birth flag
+   - New patient: Register with Student ID, Ghana Card/NHIS, DOB, address, emergency contacts, multiple birth flag etc.
    - Generate unique **Hospital ID**
    - Check-in frequent patients
    - Check-out after visit (close encounter)
 
 2. **Vitals Recording** (Nurse)
-   - Record: Height, Weight, BP, Temperature, Heart Rate
+   - Records: Height, Weight, BP, Temperature, Heart Rate
    - Note allergies, current medications
-   - Assign patient to doctor
+   - Assign patient to doctors
 
-3. **Consultation** (Doctor)
+3. **Encounter** (Doctor)
    - View patient history & current vitals
    - Record observations, diagnosis
    - Prescribe medications
@@ -56,7 +56,7 @@ The application follows a simple, linear patient workflow suitable for a small-s
    - Mark as paid
 
 7. **Visit Closure** (Receptionist)
-   - Close the encounter/visit after patient collects drugs
+   - Close the visit after patient collects and pays for drugs.
 
 ### Key Features
 
@@ -76,62 +76,285 @@ The application follows a simple, linear patient workflow suitable for a small-s
 
 - Backend: Django 5.x / 6.x
 - Database: PostgreSQL
-- Frontend: Django Templates + Bootstrap 5 + HTMX
+- Frontend: 
 - Authentication: Custom User model with roles
-- Security: CSRF protection, role-based permissions
-- Future potential: Celery for background tasks, FHIR integration, reporting
+- Security: 
+
 
 ### Current Status (as of March 2026)
 
 - Project structure established
 - Custom User model with roles implemented
-- PostgreSQL database connected
-- Basic admin interface working
+- PostgreSQL database connected (Issues with connection yet to be fixed)
 - Next steps: Patient model, Encounter model, role-specific dashboards, forms & views for each workflow stage
 
-### Setup Instructions
+### ER Diagram
+- erDiagram for use in Mermaid live Editor
 
-1. Clone the repository
-2. Create & activate virtual environment
-   ```bash
-   python -m venv venv
-   venv\\Scripts\\activate   # Windows
-   ```
-3. Install dependencies
-   ```bash
-   pip install -r requirements.txt
-   ```
-4. Configure PostgreSQL database in `settings.py`
-5. Apply migrations
-   ```bash
-   python manage.py makemigrations
-   python manage.py migrate
-   ```
-6. Create superuser
-   ```bash
-   python manage.py createsuperuser
-   ```
-7. Run development server
-   ```bash
-   python manage.py runserver
-   ```
+User || --o{UserRole : ""
+Role || --o{UserRole : ""
 
-### Security & Compliance Notes
+Person || --o{Patient : "instance at diff hospitals"
 
-This is currently a **prototype / learning project**.  
-For real clinical use, it must undergo:
+Patient || --o{ContactPoint : "has"
+Patient || --o{Address : "has"
+Patient || --o{Identifier : "possess"
+Patient || --o{Visit : "can have"
+Vist || --o{Encounter : "associated with"
+Tenant || --o{Patient : "can have"
 
-- Full security audit
-- Data encryption at rest & in transit
-- Audit logging
-- HIPAA/GDPR-like compliance (Ghana health data regulations)
-- Proper access controls & consent mechanisms
+Patient ||--o{ AllergyIntollerance : "Occurs"
+Encounter ||--o{ Observation : "Occurs"
+Location ||--o{ Encounter : "Occurs"
+Location || --o{BedLocationMap : ""
 
-### License
 
-MIT License 
 
-### Contact / Maintainer
+zlkpBed  || --o{BedLocationMap : ""
+zlkpBedType ||--o{ zlkpBed : "References"
+zlkpEncounterStatus ||--o{ Encounter : "Has"
+zlkpLocationType ||--o{ Location : "Has"
+zlkpEncounterPriority ||--o{ Encounter : "Has"
+zlkpEncounterType ||--o{ Encounter : "Has"
+zlkpIdentifierType || --o{Identifier : ""
+
+zlkpClinicalStatus || --o{AllergyIntollerance : ""
+zlkpPatientStatus || --o{Patient : "can have"
+zlkpGender || --o{Person : ""
+zlkpContactSystem || --o{ContactPoint : ""
+
+
+Person{
+    int PersonID PK
+    VARCHAR(50) FamilyName
+    VARCHAR(50) GivenName
+    VARCHAR(50) MiddleName
+    date DateOfBirth
+    int GenderID FK
+    int TitleID
+    bool MultipleBirth
+    bool IsDeceased
+    date DateOfDeath
+}
+
+Patient{
+    int PatientID Pk
+    int PersonID FK
+    GUID TenantID FK
+    VARCHAR(20) LocalMRN
+    int PatientStatusID FK
+}
+
+Tenant{
+    GUID TenantID PK
+    VARCHAR(50) TenantName
+    VARCHAR(20) TenantCode
+    bool IsActive
+}
+
+Identifier{
+    Int IdentifierID Pk
+    VARCHAR(50) IdentifierName
+    int IdentifierTypeID FK
+    VARCHAR(20) IdentifierValue
+    bool IsActive
+    date EffectiveStartDate
+    date EffectiveEndDate
+}
+
+ BedLocationMap {
+    int BedLocationMapID PK
+    int BedID FK
+    int LocationID FK
+    date EffectiveStartDate
+    date EffectiveEndDate
+    int BedRowNumber
+    int BedColumnNumber
+
+ }
+
+ Visit {
+    int VisitID PK
+    int PatientID FK
+    int VisitTypeID FK
+    date VisitDate 
+    date VisitEndDate
+ }
+
+Encounter {
+    int EncounterID Pk
+    int VisitID FK
+    int LocationID FK
+    int EncounterStatusID FK
+    datetime PeriodStart
+    datetime PeriodEnd
+    int EncounterTypeID FK
+    int EncounterPriorityID Fk
+}
+
+
+ Location {
+    int LocationID Pk
+    VARCHAR(20) LocationName
+    VARCHAR(10) Code
+    int LocationTypeID FK
+    date EffectiveStartDate
+    date EffectiveEndDate
+    bool IsActive
+    int DisplayOrder
+ }   
+
+
+
+ AllergyIntollerance{
+    int AllergyID Pk
+    int PatientID FK
+    int ClinicalStatusID
+
+ }
+
+ Observation {
+    int ObservationID Pk
+    int EncounterID FK
+    int ObservationStatusID
+    Date EffectiveStartDate
+    date EffectiveEndDate
+    VARCHAR(50) ObservedValue
+    decimal Quantity
+ }
+
+  ContactPoint {
+    int ContactPointID Pk
+    int PatientID FK
+    int ContactSystemID FK
+    VARCHAR(50) ContactPointValue
+    date EffectiveStartDate
+    date EffectiveEndDate
+    bool IsActive
+    bit IsPreferred
+ }
+
+Address {
+    int PatientAddressID Pk
+    int PatientID FK
+    string AddressLine1
+    string AddressLine2
+    string City
+    date EffectiveStartDate
+    date EffectiveEndDate
+    bool IsCurrent
+    int DisplayOrder
+ }
+
+ User {
+  int UserID PK
+  string UserName
+  bool IsActive
+  date EffectiveStartDate
+  date EffectiveEndDate
+
+ }
+
+ Role {
+    int RoleID PK
+    string RoleName
+ }
+
+ UserRole {
+    int UserID FK
+    int RoleID FK
+ }
+
+   zlkpLocationType {
+      int LocationTypeID
+      VARCHAR(20) LocationTypeName
+      int DisplayOrder
+      bool IsActive
+  }
+
+  zlkpGender{
+    int GenderID PK
+    VARCHAR(20) GenderName
+    VARCHAR(10) Code
+    bit IsActive
+}
+
+zlkpPatientStatus{
+    int PatientStatusID PK
+    VARCHAR(20) PatientStatusName
+    VARCHAR(10) StatusCode 
+    bool IsActive
+}
+
+
+zlkpClinicalStatus{
+    int ClinicalStatusID
+    VARCHAR(20) ClinicalStatusName
+    VARCHAR(10) Code
+    int DisplayOrder
+}
+
+zlkpIdentifierType{
+    int IdentifierTypeID PK
+    VARCHAR(20) IdentifierType
+    bool IsActive
+    int DisplayOrder
+}
+
+
+zlkpBedType {
+    int BedTypeID Pk
+    VARCHAR(50) BedType
+    bool IsActive
+    int DisplayOrder
+}
+
+ zlkpVisitType{
+    int VisitTypeID PK
+    VARCHAR(50) VisitTypeName 
+    VARCHAR(20) VisitTypeCode
+    bool IsActive
+    int DisplayOrder
+
+ }
+
+  zlkpContactSystem{
+    int ContactSystemID PK
+    VARCHAR(20) ContactSystem
+    bit IsActive
+    int DisplayOrder
+ }
+
+ 
+zlkpEncounterType{
+    int EncounterTypeID PK
+    VARCHAR(20) EncounterType
+    bool IsActive
+    int DisplayOrder
+
+}
+
+zlkpEncounterPriority{
+    int EncounterPriorityID Pk
+    VARCHAR(15) Priority
+    bool IsActive
+    int DisplayOrder
+}
+
+zlkpEncounterStatus{
+    int EncounterStatusID Pk
+    VARCHAR(20) EncounterStatus
+    VARCHAR(500) Definition
+    bool IsActive
+    int DisplayOrder
+}
+
+zlkpBed {
+    int BedID Pk
+    VARCHAR(10) BedNumber
+    VARCHAR(10) Code
+    int BedTypeID FK
+}
 
 
 Avexjoe
