@@ -76,7 +76,7 @@ The application follows a simple, linear patient workflow suitable for a small-s
 
 - Backend: Django 5.x / 6.x
 - Database: PostgreSQL
-- Frontend: 
+- Frontend: React, typescript 
 - Authentication: Custom User model with roles
 - Security: 
 
