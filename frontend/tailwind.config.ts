@@ -9,13 +9,19 @@ export default {
       center: true,
       padding: "2rem",
       screens: {
-        "2xl": "1400px",
+        "2xl": "1200px",
       },
     },
     extend: {
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
         heading: ['Inter', 'system-ui', 'sans-serif'],
+      },
+      boxShadow: {
+        "ray-ring": "var(--shadow-ray-ring)",
+        "ray-button": "var(--shadow-ray-button)",
+        "ray-key": "var(--shadow-ray-key)",
+        "ray-float": "var(--shadow-ray-float)",
       },
       colors: {
         border: "hsl(var(--border))",

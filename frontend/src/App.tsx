@@ -10,6 +10,8 @@ import NurseDashboard from "./pages/NurseDashboard";
 import DoctorDashboard from "./pages/DoctorDashboard";
 import LabTechDashboard from "./pages/LabTechDashboard";
 import PharmacistDashboard from "./pages/PharmacistDashboard";
+import ReceptionistDashboard from "./pages/ReceptionistDashboard";
+import CashierDashboard from "./pages/CashierDashboard";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -24,6 +26,8 @@ const DashboardRouter = () => {
     nurse: <NurseDashboard />,
     lab_tech: <LabTechDashboard />,
     pharmacist: <PharmacistDashboard />,
+    receptionist: <ReceptionistDashboard />,
+    cashier: <CashierDashboard />,
   };
 
   return dashboards[user.role] || <Navigate to="/" />;
