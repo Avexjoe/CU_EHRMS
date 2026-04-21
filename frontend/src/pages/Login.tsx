@@ -5,6 +5,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { AlertCircle, Mail, Lock, Shield } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 const Login: React.FC = () => {
   const { login } = useAuth();
@@ -12,6 +19,11 @@ const Login: React.FC = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
+  const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false);
+  const [forgotPasswordMessage, setForgotPasswordMessage] = useState('');
+  const [forgotPasswordError, setForgotPasswordError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,6 +32,46 @@ const Login: React.FC = () => {
     const success = await login(email, password);
     if (!success) setError('Invalid credentials.');
     setLoading(false);
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotPasswordError('');
+    setForgotPasswordMessage('');
+    setForgotPasswordLoading(true);
+
+    try {
+      const response = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: forgotPasswordEmail }),
+      });
+
+      if (response.ok) {
+        setForgotPasswordMessage(
+          'Password reset link sent to your email. Please check your inbox.'
+        );
+        setForgotPasswordEmail('');
+      } else {
+        const data = await response.json();
+        setForgotPasswordError(
+          data.message || 'Failed to send reset link. Please try again.'
+        );
+      }
+    } catch (error) {
+      setForgotPasswordError('An error occurred. Please try again later.');
+    } finally {
+      setForgotPasswordLoading(false);
+    }
+  };
+
+  const closeForgotPasswordDialog = () => {
+    setShowForgotPassword(false);
+    setForgotPasswordEmail('');
+    setForgotPasswordMessage('');
+    setForgotPasswordError('');
   };
 
   return (
@@ -97,7 +149,15 @@ const Login: React.FC = () => {
                       className="pl-12 bg-gray-50 border-gray-300 text-black placeholder:text-gray-500 focus:bg-white focus:border-[#dc143c] focus:ring-[#dc143c] transition-colors"
                     />
                   </div>
-                
+                  <div className="flex justify-center">
+                    <button
+                      type="button"
+                      onClick={() => setShowForgotPassword(true)}
+                      className="text-sm text-[#dc143c] hover:text-[#b01030] font-medium transition-colors mt-2"
+                    >
+                      Forgot Password?
+                    </button>
+                  </div>
                 </div>
                 <Button
                   type="submit"
@@ -129,6 +189,67 @@ const Login: React.FC = () => {
           </div> */}
         </div>
       </div>
+
+      {/* Forgot Password Dialog */}
+      <Dialog open={showForgotPassword} onOpenChange={closeForgotPasswordDialog}>
+        <DialogContent className="sm:max-w-md bg-white text-black border border-gray-200 rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-black">Reset Password</DialogTitle>
+            <DialogDescription className="text-gray-600">
+              Enter your email address and we'll send you a link to reset your password.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleForgotPassword} className="space-y-6 py-4">
+            {forgotPasswordError && (
+              <div className="flex items-center gap-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                <AlertCircle className="h-5 w-5 shrink-0" />
+                {forgotPasswordError}
+              </div>
+            )}
+            {forgotPasswordMessage && (
+              <div className="flex items-center gap-3 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">
+                <Mail className="h-5 w-5 shrink-0" />
+                {forgotPasswordMessage}
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="forgotEmail" className="text-sm font-semibold text-gray-700">
+                Email Address
+              </Label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                <Input
+                  id="forgotEmail"
+                  type="email"
+                  placeholder="your.email@hospital.edu"
+                  value={forgotPasswordEmail}
+                  onChange={e => setForgotPasswordEmail(e.target.value)}
+                  required
+                  disabled={forgotPasswordMessage !== ''}
+                  className="pl-12 bg-gray-50 border-gray-300 text-black placeholder:text-gray-500 focus:bg-white focus:border-[#dc143c] focus:ring-[#dc143c] transition-colors disabled:opacity-50"
+                />
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1 rounded-lg border-gray-300 text-gray-700 hover:bg-gray-50"
+                onClick={closeForgotPasswordDialog}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                className="flex-1 rounded-lg bg-[#dc143c] text-white hover:bg-[#b01030]"
+                disabled={forgotPasswordLoading || forgotPasswordMessage !== ''}
+              >
+                {forgotPasswordLoading ? 'Sending...' : 'Send Reset Link'}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

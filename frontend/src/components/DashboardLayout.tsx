@@ -16,6 +16,13 @@ interface SidebarLink {
   onClick?: () => void;
 }
 
+interface SidebarLink {
+  label: string;
+  icon: React.ReactNode;
+  active?: boolean;
+  onClick?: () => void;
+}
+
 const roleConfig: Record<UserRole, { label: string; icon: React.ReactNode; sidebarTitle: string }> = {
   admin: { label: 'Administrator', icon: <Shield className="h-5 w-5" />, sidebarTitle: 'Admin' },
   doctor: { label: 'Doctor', icon: <Stethoscope className="h-5 w-5" />, sidebarTitle: 'Doctor' },
@@ -58,7 +65,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children, sidebarLink
       {/* Sidebar */}
       {sidebarLinks && sidebarLinks.length > 0 && (
         <aside className={`
-          fixed top-0 left-0 z-50 h-dvh w-72 ${user.role === 'admin' ? 'bg-[#dc143c] text-white border-white/15' : 'bg-sidebar text-sidebar-foreground border-sidebar-border/60'} flex flex-col transition-transform duration-200
+          fixed top-0 left-0 z-50 h-dvh w-72 bg-[#dc143c] text-white border-white/15 flex flex-col transition-transform duration-200
           lg:sticky lg:top-0 lg:translate-x-0 lg:z-auto
           lg:transition-[width] lg:duration-200 ${sidebarCollapsed ? 'lg:w-20' : 'lg:w-72'}
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}

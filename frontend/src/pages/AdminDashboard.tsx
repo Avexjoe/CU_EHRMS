@@ -66,12 +66,12 @@ const STAFF_ON_DUTY_DATA = [
   { day: 'Sun', Doctors: 2, Nurses: 3, 'Lab Techs': 1, Pharmacists: 1, Receptionists: 1, Cashiers: 1 },
 ];
 
-// const HOURLY_VISITS = [
-//   { hour: '8AM', visits: 3 }, { hour: '9AM', visits: 8 }, { hour: '10AM', visits: 12 },
-//   { hour: '11AM', visits: 10 }, { hour: '12PM', visits: 6 }, { hour: '1PM', visits: 4 },
-//   { hour: '2PM', visits: 9 }, { hour: '3PM', visits: 11 }, { hour: '4PM', visits: 7 },
-//   { hour: '5PM', visits: 3 },
-// ];
+const HOURLY_VISITS = [
+  { hour: '8AM', visits: 3 }, { hour: '9AM', visits: 8 }, { hour: '10AM', visits: 12 },
+  { hour: '11AM', visits: 10 }, { hour: '12PM', visits: 6 }, { hour: '1PM', visits: 4 },
+  { hour: '2PM', visits: 9 }, { hour: '3PM', visits: 11 }, { hour: '4PM', visits: 7 },
+  { hour: '5PM', visits: 3 },
+];
 
 const WEEKLY_REVENUE = [
   { day: 'Mon', revenue: 2450 }, { day: 'Tue', revenue: 1800 },
@@ -194,9 +194,23 @@ const AdminDashboard: React.FC = () => {
     boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
   };
 
+  const hour = new Date().getHours();
+  let greeting = 'Good morning';
+  if (hour >= 12 && hour < 17) {
+    greeting = 'Good afternoon';
+  } else if (hour >= 17) {
+    greeting = 'Good evening';
+  }
+
   return (
     <DashboardLayout sidebarLinks={sidebarLinks} searchPlaceholder="Search system...">
       <div className="space-y-6">
+        {/* Greeting Section */}
+        <div className="mb-6 pb-6 border-b border-border/60">
+          <h1 className="text-3xl font-bold text-foreground">{greeting}, Dr. Admin! 👋</h1>
+          <p className="text-sm text-muted-foreground mt-1">Welcome back to MedVault-Central</p>
+        </div>
+
         {/* Header */}
         <div className="flex items-start justify-between">
           <div>
@@ -665,11 +679,86 @@ const AdminDashboard: React.FC = () => {
                 <CardDescription className="text-xs">Download hospital data for offline analysis</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  <Button variant="outline" className="gap-2 h-12 justify-start"><Download className="h-4 w-4 text-primary" /> <div className="text-left"><p className="text-xs font-medium">Daily Visits</p><p className="text-[10px] text-muted-foreground">CSV format</p></div></Button>
-                  <Button variant="outline" className="gap-2 h-12 justify-start"><Download className="h-4 w-4 text-success" /> <div className="text-left"><p className="text-xs font-medium">Revenue Report</p><p className="text-[10px] text-muted-foreground">PDF format</p></div></Button>
-                  <Button variant="outline" className="gap-2 h-12 justify-start"><Download className="h-4 w-4 text-warning" /> <div className="text-left"><p className="text-xs font-medium">Drug Dispensing</p><p className="text-[10px] text-muted-foreground">CSV format</p></div></Button>
-                  <Button variant="outline" className="gap-2 h-12 justify-start"><Download className="h-4 w-4 text-info" /> <div className="text-left"><p className="text-xs font-medium">Lab Turnaround</p><p className="text-[10px] text-muted-foreground">CSV format</p></div></Button>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  {/* Daily Visits */}
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium">Daily Visits</Label>
+                    <div className="flex gap-2">
+                      <Select defaultValue="csv">
+                        <SelectTrigger className="flex-1 h-8">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="csv">CSV</SelectItem>
+                          <SelectItem value="pdf">PDF</SelectItem>
+                          <SelectItem value="excel">Excel</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Button size="sm" variant="outline" className="h-8 px-2">
+                        <Download className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Revenue Report */}
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium">Revenue Report</Label>
+                    <div className="flex gap-2">
+                      <Select defaultValue="pdf">
+                        <SelectTrigger className="flex-1 h-8">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="pdf">PDF</SelectItem>
+                          <SelectItem value="csv">CSV</SelectItem>
+                          <SelectItem value="excel">Excel</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Button size="sm" variant="outline" className="h-8 px-2">
+                        <Download className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Drug Dispensing */}
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium">Drug Dispensing</Label>
+                    <div className="flex gap-2">
+                      <Select defaultValue="csv">
+                        <SelectTrigger className="flex-1 h-8">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="csv">CSV</SelectItem>
+                          <SelectItem value="pdf">PDF</SelectItem>
+                          <SelectItem value="excel">Excel</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Button size="sm" variant="outline" className="h-8 px-2">
+                        <Download className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Lab Turnaround */}
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium">Lab Turnaround</Label>
+                    <div className="flex gap-2">
+                      <Select defaultValue="csv">
+                        <SelectTrigger className="flex-1 h-8">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="csv">CSV</SelectItem>
+                          <SelectItem value="pdf">PDF</SelectItem>
+                          <SelectItem value="excel">Excel</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Button size="sm" variant="outline" className="h-8 px-2">
+                        <Download className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </Card>

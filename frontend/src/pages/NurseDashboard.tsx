@@ -28,6 +28,11 @@ const NurseDashboard: React.FC = () => {
     allergies: '', currentDrugs: '', assignDoctor: '',
   });
 
+  const hour = new Date().getHours();
+  let greeting = 'Good morning';
+  if (hour >= 12 && hour < 17) greeting = 'Good afternoon';
+  else if (hour >= 17) greeting = 'Good evening';
+
   const sidebarLinks = [
     { label: 'My Patients', icon: <Users className="h-4 w-4" />, active: activeView === 'patients', onClick: () => setActiveView('patients') },
     { label: 'Vitals Queue', icon: <Heart className="h-4 w-4" />, active: activeView === 'vitals', onClick: () => setActiveView('vitals') },
@@ -177,6 +182,11 @@ const NurseDashboard: React.FC = () => {
   return (
     <DashboardLayout sidebarLinks={sidebarLinks} searchPlaceholder="Search patients...">
       <div className="space-y-6">
+        {/* Greeting Section */}
+        <div className="mb-6 pb-6 border-b border-border/60">
+          <h1 className="text-3xl font-bold text-foreground">{greeting}, Emily! 👋</h1>
+          <p className="text-sm text-muted-foreground mt-1">Welcome back to MedVault-Central</p>
+        </div>
         <div>
           <h1 className="text-[24px] font-medium tracking-[0.2px] text-foreground">Nursing Station</h1>
           <p className="text-sm text-muted-foreground">Record vitals and prepare patients for the doctor</p>

@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { toast } from 'sonner';
 import DashboardLayout from '@/components/DashboardLayout';
 import PatientSearch from '@/components/PatientSearch';
+import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,6 +31,11 @@ const DoctorDashboard: React.FC = () => {
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
   const [newRx, setNewRx] = useState({ drug: '', dosage: '', frequency: '', duration: '', quantity: '', notes: '' });
   const [referrals, setReferrals] = useState<ReferralItem[]>([]);
+
+  const hour = new Date().getHours();
+  let greeting = 'Good morning';
+  if (hour >= 12 && hour < 17) greeting = 'Good afternoon';
+  else if (hour >= 17) greeting = 'Good evening';
 
   const sidebarLinks = [
     { label: 'My Patients', icon: <Users className="h-4 w-4" />, active: activeView === 'patients', onClick: () => setActiveView('patients') },
@@ -112,6 +118,11 @@ const DoctorDashboard: React.FC = () => {
   return (
     <DashboardLayout sidebarLinks={sidebarLinks} searchPlaceholder="Search patients...">
       <div className="space-y-6">
+        {/* Greeting Section */}
+        <div className="mb-6 pb-6 border-b border-border/60">
+          <h1 className="text-3xl font-bold text-foreground">{greeting}, Dr. Chen! 👋</h1>
+          <p className="text-sm text-muted-foreground mt-1">Welcome back to MedVault-Central</p>
+        </div>
         <div>
           <h1 className="text-[24px] font-medium tracking-[0.2px] text-foreground">Doctor's Console</h1>
           <p className="text-sm text-muted-foreground">Central University Hospital — Clinical Dashboard</p>
