@@ -101,7 +101,7 @@ const ProfileSettings: React.FC = () => {
                 <Moon className="h-5 w-5 text-muted-foreground" />
                 <div>
                   <p className="text-sm font-medium text-foreground">Dark Mode</p>
-                  <p className="text-xs text-muted-foreground">Toggle dark theme</p>
+                  <p className="text-xs text-muted-foreground">Switch to dark theme (currently light mode)</p>
                 </div>
               </div>
               <Switch checked={darkMode} onCheckedChange={setDarkMode} />

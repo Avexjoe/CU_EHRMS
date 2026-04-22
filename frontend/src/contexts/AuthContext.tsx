@@ -33,7 +33,7 @@ const MOCK_USERS: User[] = [
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [darkMode, setDarkMode] = useState(true);
+  const [darkMode, setDarkMode] = useState(false);
 
   const login = useCallback(async (email: string, _password: string): Promise<boolean> => {
     const found = MOCK_USERS.find(u => u.email === email);

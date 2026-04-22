@@ -17,7 +17,7 @@ import {
   BedDouble, Download, Clock, AlertTriangle, CheckCircle2, TrendingUp,
   TrendingDown, Stethoscope, FlaskConical, Pill, Activity, ArrowUpRight,
   ArrowDownRight, Shield, CalendarDays, HeartPulse, Zap, Server, Database,
-  Wifi, HardDrive
+  Wifi, HardDrive, Plus, Minus
 } from 'lucide-react';
 import UserAnalytics from '@/components/UserAnalytics';
 import {
@@ -105,6 +105,37 @@ const AdminDashboard: React.FC = () => {
   const [userToDelete, setUserToDelete] = useState<{ id: string; name: string } | null>(null);
   const [userFilterRole, setUserFilterRole] = useState<string>('all');
 
+  // Hospital Resources State
+  const [medicalEquipment, setMedicalEquipment] = useState([
+    { name: 'Beds', available: 11, total: 21 },
+    { name: 'Stretchers', available: 5, total: 8 },
+    { name: 'Wheel Chairs', available: 8, total: 12 },
+  ]);
+
+  const [criticalSuppliers, setCriticalSuppliers] = useState([
+    { name: 'IV Fluids', quantity: 390 },
+    { name: 'Syringes & Needles', quantity: 4600 },
+    { name: 'Bandages & Dressings', quantity: 350 },
+    { name: 'Face Masks', quantity: 650 },
+    { name: 'Blood Bank (All Types)', quantity: 53 },
+  ]);
+
+  const [facilitiesLogistics, setFacilitiesLogistics] = useState([
+    { name: 'Ambulances', available: 3, total: 5 },
+    { name: 'Operating Theaters', available: 2, total: 4 },
+    { name: 'Consultation Rooms', available: 6, total: 10 },
+  ]);
+
+  const [editingResource, setEditingResource] = useState<{ category: string; index: number; name: string; current: number; total?: number } | null>(null);
+  const [manageDialogOpen, setManageDialogOpen] = useState(false);
+  const [newQuantity, setNewQuantity] = useState('');
+
+  // Backup State
+  const [backups, setBackups] = useState<string[]>(['2026-04-20 14:30', '2026-04-19 09:15']);
+  const [backupDialogOpen, setBackupDialogOpen] = useState(false);
+  const [restoreDialogOpen, setRestoreDialogOpen] = useState(false);
+  const [selectedBackup, setSelectedBackup] = useState<string>('');
+
   const sidebarLinks = [
     { label: 'Overview', icon: <LayoutDashboard className="h-4 w-4" />, active: activeView === 'overview', onClick: () => setActiveView('overview') },
     { label: 'User Management', icon: <Users className="h-4 w-4" />, active: activeView === 'users', onClick: () => setActiveView('users') },
@@ -148,6 +179,68 @@ const AdminDashboard: React.FC = () => {
       setDeleteConfirmOpen(false);
       setUserToDelete(null);
     }
+  };
+
+  // Resource Management Functions
+  const openManageDialog = (category: string, index: number, item: any) => {
+    setEditingResource({
+      category,
+      index,
+      name: item.name,
+      current: item.available || item.quantity,
+      total: item.total
+    });
+    setNewQuantity((item.available || item.quantity).toString());
+    setManageDialogOpen(true);
+  };
+
+  const saveResourceQuantity = () => {
+    if (!editingResource) return;
+    let newQty = parseInt(newQuantity, 10);
+    if (isNaN(newQty) || newQty < 0) return;
+
+    if (editingResource.category === 'medicalEquipment') {
+      setMedicalEquipment(prev => prev.map((item, i) =>
+        i === editingResource.index ? {
+          ...item,
+          available: newQty,
+          total: newQty > item.total ? newQty : item.total
+        } : item
+      ));
+    } else if (editingResource.category === 'criticalSuppliers') {
+      setCriticalSuppliers(prev => prev.map((item, i) =>
+        i === editingResource.index ? { ...item, quantity: newQty } : item
+      ));
+    } else if (editingResource.category === 'facilitiesLogistics') {
+      setFacilitiesLogistics(prev => prev.map((item, i) =>
+        i === editingResource.index ? {
+          ...item,
+          available: newQty,
+          total: newQty > item.total ? newQty : item.total
+        } : item
+      ));
+    }
+
+    setManageDialogOpen(false);
+    setEditingResource(null);
+    setNewQuantity('');
+  };
+
+  // Backup Functions
+  const createBackup = () => {
+    const now = new Date().toISOString().slice(0, 16).replace('T', ' ');
+    setBackups(prev => [now, ...prev]);
+    setBackupDialogOpen(false);
+    // In a real app, this would call an API to create backup
+    alert('Backup created successfully!');
+  };
+
+  const restoreBackup = () => {
+    if (!selectedBackup) return;
+    // In a real app, this would call an API to restore from backup
+    alert(`Restored from backup: ${selectedBackup}`);
+    setRestoreDialogOpen(false);
+    setSelectedBackup('');
   };
 
   const saveEditRole = () => {
@@ -620,6 +713,7 @@ const AdminDashboard: React.FC = () => {
                 </div>
               </DialogContent>
             </Dialog>
+
           </>
         )}
 
@@ -772,120 +866,77 @@ const AdminDashboard: React.FC = () => {
           <div className="space-y-6">
             <h2 className="text-lg font-semibold">Hospital Resources</h2>
 
-            {/* Bed Occupancy */}
-            <Card className="border-l-4 border-l-primary">
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-sm font-semibold">
-                  <BedDouble className="h-5 w-5 text-primary" /> Bed Occupancy Overview
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div>
-                    <div className="flex justify-between text-sm mb-2">
-                      <span className="text-muted-foreground">Current Occupancy</span>
-                      <span className="font-bold text-foreground">{bedOccupancy} / {totalBeds} ({Math.round((bedOccupancy / totalBeds) * 100)}%)</span>
-                    </div>
-                    <Progress value={(bedOccupancy / totalBeds) * 100} className="h-3" />
-                  </div>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="rounded-xl bg-success/10 border border-success/20 p-4 text-center">
-                      <CheckCircle2 className="h-5 w-5 text-success mx-auto mb-1" />
-                      <p className="text-2xl font-bold text-success">{totalBeds - bedOccupancy}</p>
-                      <p className="text-xs text-muted-foreground">Available</p>
-                    </div>
-                    <div className="rounded-xl bg-primary/10 border border-primary/20 p-4 text-center">
-                      <BedDouble className="h-5 w-5 text-primary mx-auto mb-1" />
-                      <p className="text-2xl font-bold text-primary">{bedOccupancy}</p>
-                      <p className="text-xs text-muted-foreground">Occupied</p>
-                    </div>
-                    <div className="rounded-xl bg-warning/10 border border-warning/20 p-4 text-center">
-                      <AlertTriangle className="h-5 w-5 text-warning mx-auto mb-1" />
-                      <p className="text-2xl font-bold text-warning">2</p>
-                      <p className="text-xs text-muted-foreground">Maintenance</p>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Ward Breakdown */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-semibold">Ward-Level Breakdown</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {[
-                    { name: 'General Ward', total: 8, occupied: 6 },
-                    { name: 'Maternity Ward', total: 4, occupied: 3 },
-                    { name: 'Pediatric Ward', total: 3, occupied: 2 },
-                    { name: 'ICU', total: 4, occupied: 2 },
-                    { name: 'Emergency Bay', total: 2, occupied: 1 },
-                    { name: 'Surgical Ward', total: 6, occupied: 4 },
-                    { name: 'Isolation Ward', total: 3, occupied: 1 },
-                  ].map(ward => (
-                    <div key={ward.name} className="flex items-center gap-4">
-                      <span className="text-sm font-medium w-36">{ward.name}</span>
-                      <div className="flex-1">
-                        <Progress value={(ward.occupied / ward.total) * 100} className="h-2" />
-                      </div>
-                      <span className="text-xs text-muted-foreground w-16 text-right">{ward.occupied}/{ward.total}</span>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
             {/* Medical Equipment */}
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-semibold">Medical Equipment</CardTitle>
+                <CardTitle className="text-sm font-semibold">
+                  Medical Equipment
+                </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {[
-                    { name: 'Wheelchairs', available: 8, total: 12 },
-                    { name: 'Stretchers', available: 5, total: 8 },
-                    { name: 'Oxygen Concentrators', available: 6, total: 8 },
-                  ].map(eq => (
-                    <div key={eq.name} className="rounded-xl border border-border/60 bg-muted/20 p-3 shadow-ray-ring">
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-sm font-medium">{eq.name}</span>
-                        <span className="text-xs text-muted-foreground">{eq.available}/{eq.total}</span>
+                <div className="grid gap-3 sm:grid-cols-1 lg:grid-cols-3">
+                  {medicalEquipment.map((item, index) => (
+                    <div key={item.name} className="rounded-xl border border-border/60 bg-muted/20 p-4 shadow-ray-ring">
+                      <div className="flex justify-between items-start mb-3">
+                        <span className="text-sm font-medium">{item.name}</span>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                          onClick={() => openManageDialog('medicalEquipment', index, item)}
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </Button>
                       </div>
-                      <Progress value={(eq.available / eq.total) * 100} className="h-1.5" />
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-xs text-muted-foreground">Available</span>
+                        <span className="text-sm font-bold">{item.available}/{item.total}</span>
+                      </div>
+                      <Progress value={(item.available / item.total) * 100} className="h-2" />
+                      <p className="text-[10px] text-muted-foreground mt-1">
+                        {Math.round((item.available / item.total) * 100)}% utilization
+                      </p>
                     </div>
                   ))}
                 </div>
               </CardContent>
             </Card>
 
-            {/* Critical Supplies */}
+            {/* Critical Suppliers */}
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-semibold">Critical Supplies</CardTitle>
+                <CardTitle className="text-sm font-semibold">
+                  Critical Suppliers
+                </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  {[
-                    { name: 'Oxygen Cylinders', level: 72, unit: '36/50 full' },
-                    { name: 'Blood Bank (O-)', level: 45, unit: '9 units' },
-                    { name: 'Blood Bank (A+)', level: 80, unit: '16 units' },
-                    { name: 'Blood Bank (B+)', level: 60, unit: '12 units' },
-                    { name: 'Blood Bank (AB+)', level: 30, unit: '6 units' },
-                    { name: 'PPE Kits', level: 85, unit: '425 kits' },
-                    { name: 'Surgical Gloves', level: 90, unit: '1,800 pairs' },
-                    { name: 'Face Masks (N95)', level: 65, unit: '650 units' },
-                    { name: 'IV Fluids (Normal Saline)', level: 78, unit: '390 bags' },
-                    { name: 'Syringes & Needles', level: 92, unit: '4,600 units' },
-                    { name: 'Bandages & Dressings', level: 70, unit: '350 packs' },
-                    { name: 'Suture Kits', level: 55, unit: '110 kits' },
-                  ].map(s => (
-                    <div key={s.name} className="rounded-xl border border-border/60 bg-muted/20 p-3 shadow-ray-ring">
-                      <p className="text-sm font-medium mb-1">{s.name}</p>
-                      <Progress value={s.level} className={`h-2 mb-1 ${s.level < 40 ? '[&>div]:bg-destructive' : s.level < 60 ? '[&>div]:bg-warning' : ''}`} />
-                      <p className="text-[10px] text-muted-foreground">{s.unit} — {s.level}%</p>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {criticalSuppliers.map((item, index) => (
+                    <div key={item.name} className="rounded-xl border border-border/60 bg-muted/20 p-4 shadow-ray-ring">
+                      <div className="flex justify-between items-start mb-3">
+                        <span className="text-sm font-medium">{item.name}</span>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                          onClick={() => openManageDialog('criticalSuppliers', index, item)}
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </Button>
+                      </div>
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-xs text-muted-foreground">Quantity</span>
+                        <span className="text-sm font-bold">{item.quantity.toLocaleString()}</span>
+                      </div>
+                      <div className="w-full bg-muted rounded-full h-2">
+                        <div
+                          className="bg-primary h-2 rounded-full transition-all duration-300"
+                          style={{ width: `${Math.min((item.quantity / 1000) * 100, 100)}%` }}
+                        />
+                      </div>
+                      <p className="text-[10px] text-muted-foreground mt-1">
+                        {item.quantity < 200 ? 'Low stock' : item.quantity < 500 ? 'Medium stock' : 'Good stock'}
+                      </p>
                     </div>
                   ))}
                 </div>
@@ -895,57 +946,136 @@ const AdminDashboard: React.FC = () => {
             {/* Facilities & Logistics */}
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-semibold">Facilities & Logistics</CardTitle>
+                <CardTitle className="text-sm font-semibold">
+                  Facilities & Logistics
+                </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {[
-                    { name: 'Operating Theaters', available: 2, total: 4 },
-                    { name: 'Ambulances', available: 3, total: 5 },
-                    { name: 'Consultation Rooms', available: 6, total: 10 },
-                    { name: 'Pharmacy Stock Items', available: 842, total: 1000 },
-                    { name: 'Laboratory Stations', available: 4, total: 6 },
-                    { name: 'Radiology Suites', available: 2, total: 3 },
-                    { name: 'Sterilization Units', available: 3, total: 3 },
-                    { name: 'Morgue Capacity', available: 8, total: 12 },
-                    { name: 'Laundry Capacity (daily)', available: 150, total: 200 },
-                  ].map(f => (
-                    <div key={f.name} className="rounded-xl border border-border/60 bg-muted/20 p-3 shadow-ray-ring">
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-sm font-medium">{f.name}</span>
-                        <span className="text-xs text-muted-foreground">{f.available}/{f.total}</span>
+                <div className="grid gap-3 sm:grid-cols-1 lg:grid-cols-3">
+                  {facilitiesLogistics.map((item, index) => (
+                    <div key={item.name} className="rounded-xl border border-border/60 bg-muted/20 p-4 shadow-ray-ring">
+                      <div className="flex justify-between items-start mb-3">
+                        <span className="text-sm font-medium">{item.name}</span>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                          onClick={() => openManageDialog('facilitiesLogistics', index, item)}
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </Button>
                       </div>
-                      <Progress value={(f.available / f.total) * 100} className="h-1.5" />
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-xs text-muted-foreground">Available</span>
+                        <span className="text-sm font-bold">{item.available}/{item.total}</span>
+                      </div>
+                      <Progress value={(item.available / item.total) * 100} className="h-2" />
+                      <p className="text-[10px] text-muted-foreground mt-1">
+                        {Math.round((item.available / item.total) * 100)}% utilization
+                      </p>
                     </div>
                   ))}
                 </div>
               </CardContent>
             </Card>
-
-            {/* Kitchen & Nutrition */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-semibold">Kitchen & Nutrition Services</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid gap-4 sm:grid-cols-3">
-                  <div className="rounded-xl bg-success/10 border border-success/20 p-4 text-center">
-                    <p className="text-2xl font-bold text-success">42</p>
-                    <p className="text-xs text-muted-foreground">Meals Served Today</p>
-                  </div>
-                  <div className="rounded-xl bg-primary/10 border border-primary/20 p-4 text-center">
-                    <p className="text-2xl font-bold text-primary">8</p>
-                    <p className="text-xs text-muted-foreground">Special Diets Active</p>
-                  </div>
-                  <div className="rounded-xl bg-warning/10 border border-warning/20 p-4 text-center">
-                    <p className="text-2xl font-bold text-warning">3</p>
-                    <p className="text-xs text-muted-foreground">Pending Meal Requests</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
           </div>
         )}
+
+        {/* Resource Management Dialog */}
+        <Dialog open={manageDialogOpen} onOpenChange={setManageDialogOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Manage {editingResource?.name}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 pt-2">
+              <div className="space-y-2">
+                <Label>Current Quantity</Label>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setNewQuantity(prev => {
+                      const current = Math.max(0, parseInt(prev || '0'));
+                      return String(Math.max(0, current - 10));
+                    })}
+                    className="px-2"
+                  >
+                    <Minus className="h-3 w-3" />
+                    10
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setNewQuantity(prev => {
+                      const current = Math.max(0, parseInt(prev || '0'));
+                      return String(Math.max(0, current - 1));
+                    })}
+                    className="px-2"
+                  >
+                    <Minus className="h-3 w-3" />
+                    1
+                  </Button>
+                  <Input
+                    type="number"
+                    value={newQuantity}
+                    onChange={e => {
+                      const value = e.target.value;
+                      if (value === '') {
+                        setNewQuantity(value);
+                        return;
+                      }
+                      const parsed = parseInt(value, 10);
+                      if (isNaN(parsed)) return;
+                      setNewQuantity(String(Math.max(0, parsed)));
+                    }}
+                    placeholder="Enter quantity"
+                    min="0"
+                    className="flex-1"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setNewQuantity(prev => {
+                      const current = Math.max(0, parseInt(prev || '0'));
+                      const next = current + 1;
+                      return String(next);
+                    })}
+                    className="px-2"
+                  >
+                    <Plus className="h-3 w-3" />
+                    1
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setNewQuantity(prev => {
+                      const current = Math.max(0, parseInt(prev || '0'));
+                      const next = current + 10;
+                      return String(next);
+                    })}
+                    className="px-2"
+                  >
+                    <Plus className="h-3 w-3" />
+                    10
+                  </Button>
+                </div>
+              </div>
+              {editingResource?.total && (
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Capacity</span>
+                    <span className="font-medium">{editingResource.total}</span>
+                  </div>
+                  <Progress value={(parseInt(newQuantity || '0') / editingResource.total) * 100} className="h-2" />
+                </div>
+              )}
+              <div className="flex gap-3">
+                <Button onClick={() => setManageDialogOpen(false)} variant="outline" className="flex-1">Cancel</Button>
+                <Button onClick={saveResourceQuantity} className="flex-1">Save Changes</Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* ===================== SYSTEM HEALTH ===================== */}
         {activeView === 'system' && (
@@ -964,21 +1094,109 @@ const AdminDashboard: React.FC = () => {
               </CardHeader>
               <CardContent>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="rounded-xl border border-border/60 bg-muted/20 p-4 space-y-2 shadow-ray-ring">
+                  <div className="rounded-xl border border-border/80 bg-muted/20 p-4 space-y-2 shadow-ray-ring">
                     <p className="text-sm font-medium">EHR Version</p>
-                    <p className="text-xs text-muted-foreground">MedVault-Central v2.4.1</p>
+                    <p className="text-xs text-muted-foreground">MedVault-CU  V 1.0</p>
                   </div>
-                  <div className="rounded-xl border border-border/60 bg-muted/20 p-4 space-y-2 shadow-ray-ring">
-                    <p className="text-sm font-medium">Last Backup</p>
-                    <p className="text-xs text-muted-foreground">March 27, 2026 — 02:00 AM</p>
+                  <div className="rounded-xl border border-border/80 bg-muted/20 p-4 space-y-2 shadow-ray-ring">
+                    <p className="text-sm font-medium">Last Backup</p>                   
+                    <p className="text-xs text-muted-foreground">April 22, 2026 — 02:00 AM</p>
                   </div>
-                  <div className="rounded-xl border border-border/60 bg-muted/20 p-4 space-y-2 shadow-ray-ring">
+                  <div className="rounded-xl border border-border/80 bg-muted/20 p-4 space-y-2 shadow-ray-ring">
                     <p className="text-sm font-medium">Total Patients</p>
                     <p className="text-xs text-muted-foreground">{PATIENTS.length} registered</p>
                   </div>
-                  <div className="rounded-xl border border-border/60 bg-muted/20 p-4 space-y-2 shadow-ray-ring">
+                  <div className="rounded-xl border border-border/80 bg-muted/20 p-4 space-y-2 shadow-ray-ring">
                     <p className="text-sm font-medium">Total Encounters</p>
                     <p className="text-xs text-muted-foreground">{VISITS.length} on record</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Data Backup & Restore */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold">Data Backup & Restore</CardTitle>
+                <CardDescription className="text-xs">Create backups and restore hospital data from previous versions</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex gap-3">
+                  <Dialog open={backupDialogOpen} onOpenChange={setBackupDialogOpen}>
+                    <DialogTrigger asChild>
+                      <Button size="sm" className="gap-2">
+                        <Download className="h-4 w-4" />
+                        Create Backup
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Create Data Backup</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-4 pt-2">
+                        <p className="text-sm text-muted-foreground">
+                          This will create a complete backup of all hospital data including patient records, visits, users, and resources.
+                        </p>
+                        <div className="flex gap-3">
+                          <Button onClick={() => setBackupDialogOpen(false)} variant="outline" className="flex-1">Cancel</Button>
+                          <Button onClick={createBackup} className="flex-1">Create Backup</Button>
+                        </div>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+
+                  <Dialog open={restoreDialogOpen} onOpenChange={setRestoreDialogOpen}>
+                    <DialogTrigger asChild>
+                      <Button size="sm" variant="outline" className="gap-2">
+                        <ArrowUpRight className="h-4 w-4" />
+                        Restore Backup
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Restore from Backup</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-4 pt-2">
+                        <div className="space-y-2">
+                          <Label>Select Backup Version</Label>
+                          <Select value={selectedBackup} onValueChange={setSelectedBackup}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Choose a backup" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {backups.map(backup => (
+                                <SelectItem key={backup} value={backup}>
+                                  {backup}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          Warning: Restoring will overwrite current data. This action cannot be undone.
+                        </p>
+                        <div className="flex gap-3">
+                          <Button onClick={() => setRestoreDialogOpen(false)} variant="outline" className="flex-1">Cancel</Button>
+                          <Button onClick={restoreBackup} variant="destructive" className="flex-1">Restore</Button>
+                        </div>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Recent Backups</p>
+                  <div className="space-y-2 max-h-32 overflow-y-auto">
+                    {backups.length > 0 ? (
+                      backups.map(backup => (
+                        <div key={backup} className="flex items-center justify-between p-2 rounded-lg border border-border/60 bg-muted/20">
+                          <span className="text-xs">{backup}</span>
+                          <Badge variant="outline" className="text-[10px]">Available</Badge>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-xs text-muted-foreground">No backups available</p>
+                    )}
                   </div>
                 </div>
               </CardContent>
