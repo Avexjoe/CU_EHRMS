@@ -10,8 +10,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { MOCK_USERS, UserRole } from '@/contexts/AuthContext';
-import { PATIENTS, VISITS, VISIT_STATUS_LABELS, VISIT_STATUS_COLORS } from '@/data/mockData';
+import { UserRole } from '@/contexts/AuthContext';
+import { VISIT_STATUS_LABELS, VISIT_STATUS_COLORS } from '@/data/mockData';
+import { usePatients } from '@/hooks/usePatients';
+import { useVisits } from '@/hooks/useVisits';
 import {
   Users, UserPlus, Trash2, FileText, Pencil, LayoutDashboard, Settings,
   BedDouble, Download, Clock, AlertTriangle, CheckCircle2, TrendingUp,
@@ -82,7 +84,20 @@ const WEEKLY_REVENUE = [
 
 const AdminDashboard: React.FC = () => {
   const [activeView, setActiveView] = useState('overview');
-  const [users, setUsers] = useState([...MOCK_USERS]);
+  const [users, setUsers] = useState<{id: string; name: string; email: string; role: string}[]>([]);
+
+  const { patients } = usePatients();
+  const { visits } = useVisits();
+
+  // Load real staff from API
+  React.useEffect(() => {
+    const token = localStorage.getItem('ehr_token');
+    if (!token) return;
+    fetch('/api/auth/staff/', { headers: { Authorization: `Token ${token}` } })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setUsers(data))
+      .catch(() => {});
+  }, []);
   const [newUser, setNewUser] = useState({
     name: '',
     email: '',
@@ -250,21 +265,21 @@ const AdminDashboard: React.FC = () => {
     setEditingUser(null);
   };
 
-  const todayVisits = VISITS.filter(v => v.date === '2026-03-27');
+  const todayVisits = visits.filter(v => v.date === new Date().toISOString().split('T')[0]);
   const activeEncounters = todayVisits.filter(v => v.status !== 'completed').length;
   const completedToday = todayVisits.filter(v => v.status === 'completed').length;
   const bedOccupancy = 10;
   const totalBeds = 21;
-  const pendingLabs = VISITS.filter(v => v.status === 'in_lab').length;
-  const atPharmacy = VISITS.filter(v => v.status === 'at_pharmacy').length;
-  const pendingPayments = VISITS.filter(v => v.payment?.status === 'pending').length;
-  const totalRevenue = VISITS.reduce((sum, v) => sum + (v.payment?.amountPaid ?? 0), 0);
+  const pendingLabs = visits.filter(v => v.status === 'in_lab').length;
+  const atPharmacy = visits.filter(v => v.status === 'at_pharmacy').length;
+  const pendingPayments = visits.filter(v => v.payment?.status === 'pending').length;
+  const totalRevenue = visits.reduce((sum, v) => sum + parseFloat(String(v.payment?.amount_paid ?? 0)), 0);
 
   const visitStatusData = useMemo(() =>
     Object.entries(VISIT_STATUS_LABELS).map(([status, label]) => ({
       name: label,
-      count: VISITS.filter(v => v.status === status).length,
-    })).filter(d => d.count > 0), []
+      count: visits.filter(v => v.status === status).length,
+    })).filter(d => d.count > 0), [visits]
   );
 
   const PIE_COLORS = ['hsl(var(--primary))', 'hsl(var(--success))', 'hsl(var(--warning))', 'hsl(var(--info))', 'hsl(var(--accent))', 'hsl(var(--destructive))', 'hsl(var(--muted-foreground))'];
@@ -300,7 +315,7 @@ const AdminDashboard: React.FC = () => {
       <div className="space-y-6">
         {/* Greeting Section */}
         <div className="mb-6 pb-6 border-b border-border/60">
-          <h1 className="text-3xl font-bold text-foreground">{greeting}, Dr. Admin! 👋</h1>
+          <h1 className="text-3xl font-bold text-foreground">{greeting}, Dr. Agyemang! 👋</h1>
           <p className="text-sm text-muted-foreground mt-1">Welcome back to MedVault-Central</p>
         </div>
 
@@ -452,18 +467,18 @@ const AdminDashboard: React.FC = () => {
               <CardContent>
                 <div className="space-y-2">
                   {todayVisits.slice(0, 6).map(v => {
-                    const p = PATIENTS.find(pt => pt.id === v.patientId);
+                    const p = patients.find(pt => pt.id === v.patient_id);
                     return (
                       <div key={v.id} className="flex items-center gap-3 rounded-xl border border-border/60 bg-card px-4 py-3 shadow-ray-ring transition-opacity hover:opacity-60">
                         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">
                           {p?.firstName?.charAt(0)}{p?.lastName?.charAt(0)}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{p?.name} <span className="text-muted-foreground font-normal">({p?.id})</span></p>
+                          <p className="text-sm font-medium truncate">{v.patient_name ?? p?.name} <span className="text-muted-foreground font-normal">({v.patient_id})</span></p>
                           <p className="text-xs text-muted-foreground truncate">{v.time} — {v.complaint || 'No complaint recorded'}</p>
                         </div>
-                        <Badge variant="outline" className={`shrink-0 text-[10px] ${VISIT_STATUS_COLORS[v.status]}`}>
-                          {VISIT_STATUS_LABELS[v.status]}
+                        <Badge variant="outline" className={`shrink-0 text-[10px] ${VISIT_STATUS_COLORS[v.status as keyof typeof VISIT_STATUS_COLORS] ?? ''}`}>
+                          {VISIT_STATUS_LABELS[v.status as keyof typeof VISIT_STATUS_LABELS] ?? v.status}
                         </Badge>
                       </div>
                     );
@@ -1104,11 +1119,11 @@ const AdminDashboard: React.FC = () => {
                   </div>
                   <div className="rounded-xl border border-border/80 bg-muted/20 p-4 space-y-2 shadow-ray-ring">
                     <p className="text-sm font-medium">Total Patients</p>
-                    <p className="text-xs text-muted-foreground">{PATIENTS.length} registered</p>
+                    <p className="text-xs text-muted-foreground">{patients.length} registered</p>
                   </div>
                   <div className="rounded-xl border border-border/80 bg-muted/20 p-4 space-y-2 shadow-ray-ring">
                     <p className="text-sm font-medium">Total Encounters</p>
-                    <p className="text-xs text-muted-foreground">{VISITS.length} on record</p>
+                    <p className="text-xs text-muted-foreground">{visits.length} on record</p>
                   </div>
                 </div>
               </CardContent>

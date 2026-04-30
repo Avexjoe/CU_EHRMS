@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { toast } from 'sonner';
 import DashboardLayout from '@/components/DashboardLayout';
 import PatientSearch from '@/components/PatientSearch';
@@ -11,9 +11,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { VISITS, PATIENTS, Patient, Visit, Prescription, COMMON_DRUGS, VISIT_STATUS_LABELS, VISIT_STATUS_COLORS } from '@/data/mockData';
+import { COMMON_DRUGS, VISIT_STATUS_LABELS, VISIT_STATUS_COLORS } from '@/data/mockData';
+import { visitsApi, ApiPatient, ApiVisit } from '@/lib/api';
+import { usePatients } from '@/hooks/usePatients';
+import { useVisits } from '@/hooks/useVisits';
 import UserAnalytics from '@/components/UserAnalytics';
-import { Stethoscope, User, Thermometer, AlertTriangle, History, Plus, Trash2, Save, FlaskConical, Send, Users, FileText, ClipboardList } from 'lucide-react';
+import { Stethoscope, Thermometer, AlertTriangle, History, Plus, Trash2, Save, FlaskConical, Send, Users, FileText, ClipboardList } from 'lucide-react';
 
 type ReferralItem = {
   id: string;
@@ -22,15 +25,27 @@ type ReferralItem = {
   note?: string;
 };
 
+type LocalPrescription = {
+  id: string;
+  drug: string;
+  dosage: string;
+  frequency: string;
+  duration: string;
+  quantity: number;
+  notes: string;
+};
+
 const DoctorDashboard: React.FC = () => {
-  const TODAY = '2026-03-27';
+  const { user } = useAuth();
   const [activeView, setActiveView] = useState('patients');
-  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
-  const [visits, setVisits] = useState<Visit[]>([...VISITS]);
+  const [selectedPatient, setSelectedPatient] = useState<ApiPatient | null>(null);
   const [consultation, setConsultation] = useState({ history: '', examination: '', diagnosis: '' });
-  const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
+  const [prescriptions, setPrescriptions] = useState<LocalPrescription[]>([]);
   const [newRx, setNewRx] = useState({ drug: '', dosage: '', frequency: '', duration: '', quantity: '', notes: '' });
   const [referrals, setReferrals] = useState<ReferralItem[]>([]);
+
+  const { patients } = usePatients();
+  const { visits, refetch: refetchVisits } = useVisits();
 
   const hour = new Date().getHours();
   let greeting = 'Good morning';
@@ -43,15 +58,20 @@ const DoctorDashboard: React.FC = () => {
     { label: 'Lab Results Review', icon: <FlaskConical className="h-4 w-4" />, active: activeView === 'lab', onClick: () => setActiveView('lab') },
   ];
 
-  const myVisits = visits.filter(v => (v.doctorId === '2' || v.status === 'ready_for_doctor') && v.date === TODAY);
-  const patientVisits = selectedPatient ? visits.filter(v => v.patientId === selectedPatient.id) : [];
+  const today = new Date().toISOString().split('T')[0];
+  // Show visits that are ready for doctor or assigned to this doctor
+  const myVisits = visits.filter(v =>
+    (v.status === 'ready_for_doctor' || (user && v.doctor_id === Number(user.id))) && v.date === today
+  );
+
+  const patientVisits = selectedPatient ? visits.filter(v => v.patient_id === selectedPatient.id) : [];
   const sortedPatientVisits = patientVisits.slice().sort((a, b) => `${a.date}T${a.time}`.localeCompare(`${b.date}T${b.time}`));
-  const activeVisit = sortedPatientVisits.filter(v => v.date === TODAY).slice(-1)[0] ?? sortedPatientVisits.slice(-1)[0];
+  const activeVisit = sortedPatientVisits.filter(v => v.date === today).slice(-1)[0] ?? sortedPatientVisits.slice(-1)[0];
   const pastVisits = patientVisits.filter(v => v.status === 'completed');
 
-  const getPatient = (id: string) => PATIENTS.find(p => p.id === id);
+  const getPatient = (id: string) => patients.find(p => p.id === id);
 
-  const onSelectPatient = (p: Patient) => {
+  const onSelectPatient = (p: ApiPatient) => {
     setSelectedPatient(p);
     setConsultation({ history: '', examination: '', diagnosis: '' });
     setPrescriptions([]);
@@ -69,28 +89,49 @@ const DoctorDashboard: React.FC = () => {
     toast.success('Prescription added');
   };
 
-  const saveConsultation = () => {
+  const saveConsultation = async () => {
     if (!activeVisit) {
       toast.error('Select a patient with a visit first');
       return;
     }
-    setVisits(prev => prev.map(v => v.id === activeVisit.id ? {
-      ...v, status: 'completed' as const, doctorId: '2',
-      doctorNotes: consultation, prescriptions,
-    } : v));
-    toast.success('Consultation saved & visit completed');
+    try {
+      await visitsApi.update(activeVisit.id, {
+        status: 'completed',
+        history: consultation.history,
+        examination: consultation.examination,
+        diagnosis: consultation.diagnosis,
+      });
+      // Add each prescription
+      for (const rx of prescriptions) {
+        await visitsApi.addPrescription(activeVisit.id, {
+          drug: rx.drug,
+          dosage: rx.dosage,
+          frequency: rx.frequency,
+          duration: rx.duration,
+          quantity: rx.quantity,
+          notes: rx.notes,
+        });
+      }
+      toast.success('Consultation saved & visit completed');
+      refetchVisits();
+    } catch (err: any) {
+      toast.error('Failed to save consultation', { description: err?.message });
+    }
   };
 
-  const requestLabTest = () => {
+  const requestLabTest = async () => {
     if (!activeVisit) {
       toast.error('Select a patient with a visit first');
       return;
     }
-    setVisits(prev => prev.map(v => v.id === activeVisit.id ? {
-      ...v, status: 'in_lab' as const,
-      labRequests: [...(v.labRequests || []), { id: `LR${Date.now()}`, testName: 'Pending', requestedBy: '2', requestedAt: new Date().toISOString(), status: 'pending' as const }],
-    } : v));
-    toast.info('Lab test requested');
+    try {
+      await visitsApi.update(activeVisit.id, { status: 'in_lab' });
+      await visitsApi.addLabRequest(activeVisit.id, { test_name: 'Pending' });
+      toast.info('Lab test requested');
+      refetchVisits();
+    } catch (err: any) {
+      toast.error('Failed to request lab test', { description: err?.message });
+    }
   };
 
   const referToDoctor = () => {
@@ -100,12 +141,7 @@ const DoctorDashboard: React.FC = () => {
     }
     const note = consultation.diagnosis?.trim() ? `Dx: ${consultation.diagnosis.trim()}` : undefined;
     setReferrals(prev => [
-      {
-        id: `REF${Date.now()}`,
-        patientId: selectedPatient.id,
-        createdAt: new Date().toISOString(),
-        note,
-      },
+      { id: `REF${Date.now()}`, patientId: selectedPatient.id, createdAt: new Date().toISOString(), note },
       ...prev,
     ]);
     setActiveView('referrals');
@@ -113,14 +149,17 @@ const DoctorDashboard: React.FC = () => {
   };
 
   // Check for completed lab results
-  const pendingLabReview = visits.filter(v => v.labResults && v.labResults.some(lr => lr.status === 'complete') && v.doctorId === '2' && v.status !== 'completed');
+  const pendingLabReview = visits.filter(v =>
+    v.lab_results && v.lab_results.some(lr => lr.status === 'complete') &&
+    user && v.doctor_id === Number(user.id) && v.status !== 'completed'
+  );
 
   return (
     <DashboardLayout sidebarLinks={sidebarLinks} searchPlaceholder="Search patients...">
       <div className="space-y-6">
         {/* Greeting Section */}
         <div className="mb-6 pb-6 border-b border-border/60">
-          <h1 className="text-3xl font-bold text-foreground">{greeting}, Dr. Chen! 👋</h1>
+          <h1 className="text-3xl font-bold text-foreground">{greeting}, Dr. Mensah! 👋</h1>
           <p className="text-sm text-muted-foreground mt-1">Welcome back to MedVault-Central</p>
         </div>
         <div>
@@ -155,8 +194,8 @@ const DoctorDashboard: React.FC = () => {
                   <p className="py-6 text-center text-sm text-muted-foreground">No patients assigned yet.</p>
                 ) : (
                   myVisits.map(v => {
-                    const p = getPatient(v.patientId);
-                    const isSelected = selectedPatient?.id === v.patientId;
+                    const p = getPatient(v.patient_id);
+                    const isSelected = selectedPatient?.id === v.patient_id;
                     return (
                       <button key={v.id} onClick={() => p && onSelectPatient(p)}
                         className={`w-full text-left rounded-xl border p-3 shadow-ray-ring transition-opacity ${
@@ -166,11 +205,11 @@ const DoctorDashboard: React.FC = () => {
                         }`}>
                         <div className="flex items-center justify-between">
                           <div>
-                            <p className="text-sm font-medium">{p?.name}</p>
-                            <p className="text-xs text-muted-foreground">{p?.id} · {v.time}</p>
+                            <p className="text-sm font-medium">{v.patient_name ?? p?.name}</p>
+                            <p className="text-xs text-muted-foreground">{v.patient_id} · {v.time}</p>
                           </div>
-                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${VISIT_STATUS_COLORS[v.status]}`}>
-                            {VISIT_STATUS_LABELS[v.status]}
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${VISIT_STATUS_COLORS[v.status as keyof typeof VISIT_STATUS_COLORS] ?? 'bg-muted text-muted-foreground'}`}>
+                            {VISIT_STATUS_LABELS[v.status as keyof typeof VISIT_STATUS_LABELS] ?? v.status}
                           </span>
                         </div>
                         {v.complaint && <p className="text-xs text-muted-foreground mt-1 truncate">{v.complaint}</p>}
@@ -245,7 +284,7 @@ const DoctorDashboard: React.FC = () => {
                             <div key={v.id} className="rounded-xl border border-border/60 bg-muted/20 p-3 shadow-ray-ring">
                               <div className="flex justify-between text-sm mb-1">
                                 <span className="font-medium">{v.date}</span>
-                                <span className="text-muted-foreground">{v.doctorNotes?.diagnosis ?? '—'}</span>
+                                <span className="text-muted-foreground">{v.doctor_notes?.diagnosis ?? '—'}</span>
                               </div>
                               <p className="text-xs text-muted-foreground">{v.complaint}</p>
                             </div>
@@ -349,12 +388,12 @@ const DoctorDashboard: React.FC = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {pendingLabReview.flatMap(v => (v.labResults || []).filter(lr => lr.status === 'complete').map(lr => ({ v, lr }))).map(({ v, lr }) => {
-                      const p = getPatient(v.patientId);
+                    {pendingLabReview.flatMap(v => (v.lab_results || []).filter(lr => lr.status === 'complete').map(lr => ({ v, lr }))).map(({ v, lr }) => {
+                      const p = getPatient(v.patient_id);
                       return (
                         <TableRow key={lr.id}>
-                          <TableCell className="font-medium">{p?.name ?? v.patientId}</TableCell>
-                          <TableCell className="text-muted-foreground">{lr.testName}</TableCell>
+                          <TableCell className="font-medium">{v.patient_name ?? p?.name ?? v.patient_id}</TableCell>
+                          <TableCell className="text-muted-foreground">{lr.test_name}</TableCell>
                           <TableCell>
                             <span className="rounded-full bg-success/10 px-2.5 py-0.5 text-xs font-medium text-success">Complete</span>
                           </TableCell>
@@ -362,7 +401,7 @@ const DoctorDashboard: React.FC = () => {
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => toast.info(`Opened ${lr.testName} for ${p?.name ?? v.patientId}`)}
+                              onClick={() => toast.info(`Opened ${lr.test_name} for ${v.patient_name ?? p?.name ?? v.patient_id}`)}
                               className="gap-1"
                             >
                               <FileText className="h-4 w-4" /> Open
@@ -408,7 +447,7 @@ const DoctorDashboard: React.FC = () => {
           </Card>
         )}
 
-        <UserAnalytics roleField="doctorId" userId="2" title="My Patient Activity" />
+        <UserAnalytics title="My Patient Activity" />
       </div>
     </DashboardLayout>
   );

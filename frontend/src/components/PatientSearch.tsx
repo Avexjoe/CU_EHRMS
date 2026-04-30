@@ -1,32 +1,29 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 import { Search } from 'lucide-react';
-import { PATIENTS, Patient } from '@/data/mockData';
+import { patientsApi, ApiPatient } from '@/lib/api';
 
 interface PatientSearchProps {
-  onSelect: (patient: Patient) => void;
+  onSelect: (patient: ApiPatient) => void;
 }
 
 const PatientSearch: React.FC<PatientSearchProps> = ({ onSelect }) => {
   const [query, setQuery] = useState('');
+  const [results, setResults] = useState<ApiPatient[]>([]);
   const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const normalizedQuery = query.toLowerCase().trim();
-
-  const filtered = normalizedQuery.length > 0
-    ? PATIENTS.filter(p =>
-        p.name.toLowerCase().includes(normalizedQuery) ||
-        p.id.toLowerCase().includes(normalizedQuery) ||
-        p.firstName.toLowerCase().includes(normalizedQuery) ||
-        p.lastName.toLowerCase().includes(normalizedQuery) ||
-        p.phone?.toLowerCase().includes(normalizedQuery) ||
-        p.nationalId?.toLowerCase().includes(normalizedQuery) ||
-        p.nhisCard?.toLowerCase().includes(normalizedQuery) ||
-        p.studentId?.toLowerCase().includes(normalizedQuery) ||
-        p.bloodType?.toLowerCase().includes(normalizedQuery) ||
-        p.department?.toLowerCase().includes(normalizedQuery)
-      )
-    : [];
+  useEffect(() => {
+    if (!query.trim()) { setResults([]); return; }
+    const t = setTimeout(() => {
+      setLoading(true);
+      patientsApi.list(query)
+        .then(d => setResults(d.results ?? (d as any)))
+        .catch(() => setResults([]))
+        .finally(() => setLoading(false));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [query]);
 
   return (
     <div className="relative w-full max-w-md">
@@ -38,15 +35,17 @@ const PatientSearch: React.FC<PatientSearchProps> = ({ onSelect }) => {
         onChange={e => { setQuery(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)}
       />
-      {open && filtered.length > 0 && (
+      {open && results.length > 0 && (
         <div className="absolute top-full left-0 z-50 mt-1 w-full rounded-lg border border-border bg-card shadow-lg max-h-72 overflow-y-auto">
-          {filtered.map(p => (
+          {results.map(p => (
             <button
               key={p.id}
               className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm transition-colors hover:bg-muted first:rounded-t-lg last:rounded-b-lg"
               onClick={() => { onSelect(p); setQuery(p.name); setOpen(false); }}
             >
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">{p.name.split(' ').map(n => n[0]).join('')}</div>
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                {p.firstName?.[0]}{p.lastName?.[0]}
+              </div>
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-foreground truncate">{p.name}</p>
                 <p className="text-xs text-muted-foreground truncate">
@@ -59,7 +58,7 @@ const PatientSearch: React.FC<PatientSearchProps> = ({ onSelect }) => {
           ))}
         </div>
       )}
-      {open && normalizedQuery.length > 0 && filtered.length === 0 && (
+      {open && query.trim() && results.length === 0 && !loading && (
         <div className="absolute top-full left-0 z-50 mt-1 w-full rounded-lg border border-border bg-card shadow-lg p-4 text-center text-sm text-muted-foreground">
           No patients found for "{query}"
         </div>

@@ -9,21 +9,26 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Checkbox } from '@/components/ui/checkbox';
-import { VISITS, PATIENTS, Visit, VISIT_STATUS_LABELS, VISIT_STATUS_COLORS } from '@/data/mockData';
-import { MOCK_USERS } from '@/contexts/AuthContext';
-import { FlaskConical, Search, CheckCircle, Clock, FileText, Upload } from 'lucide-react';
+import { VISIT_STATUS_LABELS, VISIT_STATUS_COLORS } from '@/data/mockData';
+import { visitsApi, ApiVisit } from '@/lib/api';
+import { usePatients } from '@/hooks/usePatients';
+import { useVisits } from '@/hooks/useVisits';
+import { FlaskConical, Search, CheckCircle, Clock, FileText } from 'lucide-react';
 import UserAnalytics from '@/components/UserAnalytics';
+import { useStaff } from '@/hooks/useStaff';
 
 const LabTechDashboard: React.FC = () => {
   const [activeView, setActiveView] = useState('pending');
-  const [visits, setVisits] = useState<Visit[]>([...VISITS]);
   const [resultOpen, setResultOpen] = useState(false);
-  const [selectedVisitId, setSelectedVisitId] = useState<string | null>(null);
+  const [selectedVisitId, setSelectedVisitId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
   const [resultForm, setResultForm] = useState({
     testType: '', result: '', notes: '', fileName: '', markPending24: false,
   });
+
+  const { patients } = usePatients();
+  const { visits, refetch: refetchVisits } = useVisits();
 
   const sidebarLinks = [
     { label: 'Pending Tests', icon: <Clock className="h-4 w-4" />, active: activeView === 'pending', onClick: () => setActiveView('pending') },
@@ -31,43 +36,55 @@ const LabTechDashboard: React.FC = () => {
     { label: 'Search Patients', icon: <Search className="h-4 w-4" />, active: activeView === 'search', onClick: () => setActiveView('search') },
   ];
 
-  const getPatient = (id: string) => PATIENTS.find(p => p.id === id);
-  const getDoctor = (id?: string) => id ? MOCK_USERS.find(u => u.id === id) : null;
+  const getPatient = (id: string) => patients.find(p => p.id === id);
+  const allStaff = useStaff();
+  const getDoctor = (id?: number | null) => id ? allStaff.find(u => u.id === String(id)) : null;
 
   // Visits that need lab work
-  const pendingLabVisits = visits.filter(v => v.status === 'in_lab' || (v.labRequests && v.labRequests.some(lr => lr.status !== 'complete')));
-  const completedLabVisits = visits.filter(v => v.labResults && v.labResults.some(lr => lr.status === 'complete'));
+  const pendingLabVisits = visits.filter(v => v.status === 'in_lab' || (v.lab_requests && v.lab_requests.some(lr => lr.status !== 'complete')));
+  const completedLabVisits = visits.filter(v => v.lab_results && v.lab_results.some(lr => lr.status === 'complete'));
 
   const filteredVisits = searchQuery.trim()
     ? visits.filter(v => {
-        const p = getPatient(v.patientId);
-        return p?.name.toLowerCase().includes(searchQuery.toLowerCase()) || p?.id.toLowerCase().includes(searchQuery.toLowerCase());
+        const p = getPatient(v.patient_id);
+        return (
+          (v.patient_name ?? '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+          v.patient_id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          p?.name.toLowerCase().includes(searchQuery.toLowerCase())
+        );
       })
     : [];
 
-  const openResult = (visitId: string) => {
+  const openResult = (visitId: number) => {
     setSelectedVisitId(visitId);
     setResultForm({ testType: '', result: '', notes: '', fileName: '', markPending24: false });
     setResultOpen(true);
   };
 
-  const saveResult = (complete: boolean) => {
+  const saveResult = async (complete: boolean) => {
     if (!selectedVisitId || !resultForm.testType) return;
-    const status = complete ? 'complete' as const : 'pending' as const;
-    setVisits(prev => prev.map(v => v.id === selectedVisitId ? {
-      ...v,
-      status: complete ? 'at_pharmacy' as const : v.status,
-      labResults: [...(v.labResults || []), {
-        id: `LR${Date.now()}`, testName: resultForm.testType, fileName: resultForm.fileName || 'N/A',
-        uploadedBy: 'James Wilson', uploadedAt: new Date().toISOString(),
-        result: resultForm.result, notes: resultForm.notes, status,
-      }],
-    } : v));
-    setResultOpen(false);
-    toast.success(complete ? 'Result saved & sent to doctor' : 'Result saved as pending');
+    const resultStatus = complete ? 'complete' : 'pending';
+    const currentVisit = visits.find(v => v.id === selectedVisitId);
+    try {
+      await visitsApi.addLabResult(selectedVisitId, {
+        test_name: resultForm.testType,
+        result: resultForm.result,
+        notes: resultForm.notes,
+        file_name: resultForm.fileName || '',
+        status: resultStatus,
+      });
+      if (complete) {
+        await visitsApi.update(selectedVisitId, { status: 'at_pharmacy' });
+      }
+      setResultOpen(false);
+      toast.success(complete ? 'Result saved & sent to doctor' : 'Result saved as pending');
+      refetchVisits();
+    } catch (err: any) {
+      toast.error('Failed to save result', { description: err?.message });
+    }
   };
 
-  const renderLabTable = (labVisits: Visit[]) => (
+  const renderLabTable = (labVisits: ApiVisit[]) => (
     <Table>
       <TableHeader>
         <TableRow>
@@ -81,22 +98,22 @@ const LabTechDashboard: React.FC = () => {
       </TableHeader>
       <TableBody>
         {labVisits.map(v => {
-          const p = getPatient(v.patientId);
-          const doc = getDoctor(v.doctorId);
+          const p = getPatient(v.patient_id);
+          const doc = getDoctor(v.doctor_id);
           return (
             <TableRow key={v.id}>
-              <TableCell className="font-medium">{p?.name}</TableCell>
-              <TableCell className="font-mono text-xs">{p?.id}</TableCell>
+              <TableCell className="font-medium">{v.patient_name ?? p?.name}</TableCell>
+              <TableCell className="font-mono text-xs">{v.patient_id}</TableCell>
               <TableCell className="text-muted-foreground text-sm">{doc?.name ?? '—'}</TableCell>
               <TableCell className="text-muted-foreground">{v.time}</TableCell>
               <TableCell>
-                <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${VISIT_STATUS_COLORS[v.status]}`}>
-                  {VISIT_STATUS_LABELS[v.status]}
+                <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${VISIT_STATUS_COLORS[v.status as keyof typeof VISIT_STATUS_COLORS] ?? 'bg-muted text-muted-foreground'}`}>
+                  {VISIT_STATUS_LABELS[v.status as keyof typeof VISIT_STATUS_LABELS] ?? v.status}
                 </span>
               </TableCell>
               <TableCell>
                 <Button size="sm" variant="outline" onClick={() => openResult(v.id)} className="text-xs gap-1">
-                  <FileText className="h-3 w-3" /> {v.labResults?.length ? 'Add Result' : 'Enter Result'}
+                  <FileText className="h-3 w-3" /> {v.lab_results?.length ? 'Add Result' : 'Enter Result'}
                 </Button>
               </TableCell>
             </TableRow>
@@ -162,21 +179,21 @@ const LabTechDashboard: React.FC = () => {
             <DialogHeader><DialogTitle>Lab Result Entry</DialogTitle></DialogHeader>
             {(() => {
               const visit = visits.find(v => v.id === selectedVisitId);
-              const patient = visit ? getPatient(visit.patientId) : null;
+              const patient = visit ? getPatient(visit.patient_id) : null;
               return (
                 <div className="space-y-4 pt-2">
-                  {patient && (
+                  {(patient || visit) && (
                     <div className="rounded-xl border border-border/60 bg-muted/20 p-3 shadow-ray-ring">
-                      <p className="font-medium">{patient.name}</p>
-                      <p className="text-xs text-muted-foreground">ID: {patient.id}</p>
+                      <p className="font-medium">{visit?.patient_name ?? patient?.name}</p>
+                      <p className="text-xs text-muted-foreground">ID: {visit?.patient_id}</p>
                     </div>
                   )}
 
-                  {visit?.labRequests && visit.labRequests.length > 0 && (
+                  {visit?.lab_requests && visit.lab_requests.length > 0 && (
                     <div className="rounded-xl border border-[hsla(202,100%,67%,0.25)] bg-[hsla(202,100%,67%,0.12)] p-3 shadow-ray-ring">
                       <p className="text-xs font-semibold text-info mb-1">Requested Tests</p>
-                      {visit.labRequests.map(lr => (
-                        <p key={lr.id} className="text-sm text-muted-foreground">{lr.testName} — {lr.status}</p>
+                      {visit.lab_requests.map(lr => (
+                        <p key={lr.id} className="text-sm text-muted-foreground">{lr.test_name} — {lr.status}</p>
                       ))}
                     </div>
                   )}
@@ -203,7 +220,7 @@ const LabTechDashboard: React.FC = () => {
           </DialogContent>
         </Dialog>
 
-        <UserAnalytics roleField="all" title="Lab Activity Overview" />
+        <UserAnalytics title="Lab Activity Overview" />
       </div>
     </DashboardLayout>
   );

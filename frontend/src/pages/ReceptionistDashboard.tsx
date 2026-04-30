@@ -8,15 +8,18 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { PATIENTS, VISITS, Patient, Visit, VISIT_STATUS_LABELS, VISIT_STATUS_COLORS, VisitStatus } from '@/data/mockData';
+import { VISIT_STATUS_LABELS, VISIT_STATUS_COLORS } from '@/data/mockData';
+import { patientsApi, visitsApi, ApiPatient, ApiVisit } from '@/lib/api';
+import { usePatients } from '@/hooks/usePatients';
+import { useVisits } from '@/hooks/useVisits';
 import { UserPlus, Play, LogOut, LayoutDashboard, CalendarDays, ClipboardCheck, Users } from 'lucide-react';
 
 const ReceptionistDashboard: React.FC = () => {
   const [activeView, setActiveView] = useState('dashboard');
-  const [patients, setPatients] = useState<Patient[]>([...PATIENTS]);
-  const [visits, setVisits] = useState<Visit[]>([...VISITS]);
   const [newPatientOpen, setNewPatientOpen] = useState(false);
-  const [patientCount, setPatientCount] = useState(PATIENTS.length);
+
+  const { patients, loading: patientsLoading, refetch: refetchPatients } = usePatients();
+  const { visits, loading: visitsLoading, refetch: refetchVisits } = useVisits();
 
   const [form, setForm] = useState({
     firstName: '', lastName: '', studentId: '', nationalId: '', nhisCard: '',
@@ -31,52 +34,66 @@ const ReceptionistDashboard: React.FC = () => {
     { label: 'Check-Out Queue', icon: <ClipboardCheck className="h-4 w-4" />, active: activeView === 'checkout', onClick: () => setActiveView('checkout') },
   ];
 
-  const registerPatient = () => {
+  const registerPatient = async () => {
     if (!form.firstName || !form.lastName || !form.dob) {
       toast.error('Please fill required fields (First Name, Last Name, DOB)');
       return;
     }
-    const newCount = patientCount + 1;
-    const hospitalId = `CUP${String(newCount).padStart(5, '0')}`;
-    const age = new Date().getFullYear() - new Date(form.dob).getFullYear();
-    const newP: Patient = {
-      id: hospitalId, firstName: form.firstName, lastName: form.lastName,
-      name: `${form.firstName} ${form.lastName}`, age, gender: 'Other', dob: form.dob,
-      phone: '', address: `${form.street}, ${form.city}, ${form.country}`, bloodType: '',
-      allergies: [], chronicConditions: [],
-      studentId: form.studentId, nationalId: form.nationalId, nhisCard: form.nhisCard,
-      country: form.country, city: form.city, street: form.street, digitalAddress: form.digitalAddress,
-      emergencyContact1Name: form.ec1Name, emergencyContact1Phone: form.ec1Phone,
-      emergencyContact2Name: form.ec2Name, emergencyContact2Phone: form.ec2Phone,
-      multipleBirth: form.multipleBirth, checkedIn: false,
-    };
-    setPatients(prev => [...prev, newP]);
-    setPatientCount(newCount);
-    setForm({ firstName: '', lastName: '', studentId: '', nationalId: '', nhisCard: '', dob: '', country: 'Ghana', city: '', street: '', digitalAddress: '', ec1Name: '', ec1Phone: '', ec2Name: '', ec2Phone: '', multipleBirth: false });
-    setNewPatientOpen(false);
-    toast.success(`Patient registered successfully!`, { description: `Hospital ID: ${hospitalId}` });
+    try {
+      const newP = await patientsApi.create({
+        firstName: form.firstName,
+        lastName: form.lastName,
+        dob: form.dob,
+        studentId: form.studentId,
+        nationalId: form.nationalId,
+        nhisCard: form.nhisCard,
+        country: form.country,
+        city: form.city,
+        street: form.street,
+        digitalAddress: form.digitalAddress,
+        emergencyContact1Name: form.ec1Name,
+        emergencyContact1Phone: form.ec1Phone,
+        emergencyContact2Name: form.ec2Name,
+        emergencyContact2Phone: form.ec2Phone,
+        multipleBirth: form.multipleBirth,
+      });
+      setForm({ firstName: '', lastName: '', studentId: '', nationalId: '', nhisCard: '', dob: '', country: 'Ghana', city: '', street: '', digitalAddress: '', ec1Name: '', ec1Phone: '', ec2Name: '', ec2Phone: '', multipleBirth: false });
+      setNewPatientOpen(false);
+      toast.success('Patient registered successfully!', { description: `Hospital ID: ${newP.id}` });
+      refetchPatients();
+    } catch (err: any) {
+      toast.error('Failed to register patient', { description: err?.message });
+    }
   };
 
-  const startEncounter = (patientId: string) => {
-    const newVisit: Visit = {
-      id: `V${Date.now()}`, patientId, date: new Date().toISOString().split('T')[0],
-      time: new Date().toTimeString().slice(0, 5), status: 'waiting', priority: 'normal',
-    };
-    setVisits(prev => [newVisit, ...prev]);
-    setPatients(prev => prev.map(p => p.id === patientId ? { ...p, checkedIn: true, arrivalTime: newVisit.time } : p));
-    const patient = patients.find(p => p.id === patientId);
-    toast.success(`Encounter started for ${patient?.name ?? patientId}`);
+  const startEncounter = async (patientId: string) => {
+    const today = new Date().toISOString().split('T')[0];
+    const time = new Date().toTimeString().slice(0, 5);
+    try {
+      await visitsApi.create({ patient_id: patientId, date: today, time, status: 'waiting', priority: 'normal' });
+      const patient = patients.find(p => p.id === patientId);
+      toast.success(`Encounter started for ${patient?.name ?? patientId}`);
+      refetchVisits();
+      refetchPatients();
+    } catch (err: any) {
+      toast.error('Failed to start encounter', { description: err?.message });
+    }
   };
 
-  const checkOut = (visitId: string) => {
-    setVisits(prev => prev.map(v => v.id === visitId ? { ...v, status: 'completed' as VisitStatus } : v));
-    const visit = visits.find(v => v.id === visitId);
-    const patient = patients.find(p => p.id === visit?.patientId);
-    if (patient) setPatients(prev => prev.map(p => p.id === patient.id ? { ...p, checkedIn: false } : p));
-    toast.info(`${patient?.name ?? 'Patient'} checked out`);
+  const checkOut = async (visitId: number) => {
+    try {
+      await visitsApi.update(visitId, { status: 'completed' });
+      const visit = visits.find(v => v.id === visitId);
+      const patient = patients.find(p => p.id === visit?.patient_id);
+      toast.info(`${patient?.name ?? 'Patient'} checked out`);
+      refetchVisits();
+    } catch (err: any) {
+      toast.error('Failed to check out patient', { description: err?.message });
+    }
   };
 
-  const todayVisits = visits.filter(v => v.date === '2026-03-27' || v.date === new Date().toISOString().split('T')[0]);
+  const today = new Date().toISOString().split('T')[0];
+  const todayVisits = visits.filter(v => v.date === today);
   const activeVisits = todayVisits.filter(v => v.status !== 'completed');
   const checkoutQueue = todayVisits.filter(v => v.status === 'completed' || v.status === 'at_pharmacy');
 
@@ -133,7 +150,9 @@ const ReceptionistDashboard: React.FC = () => {
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    {todayVisits.length === 0 ? (
+                    {visitsLoading ? (
+                      <p className="py-12 text-center text-muted-foreground">Loading visits...</p>
+                    ) : todayVisits.length === 0 ? (
                       <p className="py-12 text-center text-muted-foreground">No visits today yet.</p>
                     ) : (
                       <div className="overflow-x-auto">
@@ -150,16 +169,16 @@ const ReceptionistDashboard: React.FC = () => {
                           </TableHeader>
                           <TableBody>
                             {todayVisits.map(v => {
-                              const p = getPatient(v.patientId);
+                              const p = getPatient(v.patient_id);
                               return (
                                 <TableRow key={v.id}>
-                                  <TableCell className="font-medium">{p?.name ?? '—'}</TableCell>
-                                  <TableCell className="font-mono text-xs">{p?.id}</TableCell>
+                                  <TableCell className="font-medium">{v.patient_name ?? p?.name ?? '—'}</TableCell>
+                                  <TableCell className="font-mono text-xs">{v.patient_id}</TableCell>
                                   <TableCell className="text-xs text-muted-foreground">{p?.studentId || p?.staffId || '—'}</TableCell>
                                   <TableCell className="text-muted-foreground">{p?.arrivalTime || v.time}</TableCell>
                                   <TableCell>
-                                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${VISIT_STATUS_COLORS[v.status]}`}>
-                                      {VISIT_STATUS_LABELS[v.status]}
+                                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${VISIT_STATUS_COLORS[v.status as keyof typeof VISIT_STATUS_COLORS] ?? 'bg-muted text-muted-foreground'}`}>
+                                      {VISIT_STATUS_LABELS[v.status as keyof typeof VISIT_STATUS_LABELS] ?? v.status}
                                     </span>
                                   </TableCell>
                                   <TableCell>
@@ -193,13 +212,13 @@ const ReceptionistDashboard: React.FC = () => {
                 <TableHeader><TableRow><TableHead>Patient</TableHead><TableHead>Hospital ID</TableHead><TableHead>Time</TableHead><TableHead>Status</TableHead><TableHead>Action</TableHead></TableRow></TableHeader>
                 <TableBody>
                   {todayVisits.map(v => {
-                    const p = getPatient(v.patientId);
+                    const p = getPatient(v.patient_id);
                     return (
                       <TableRow key={v.id}>
-                        <TableCell className="font-medium">{p?.name}</TableCell>
-                        <TableCell className="font-mono text-xs">{p?.id}</TableCell>
+                        <TableCell className="font-medium">{v.patient_name ?? p?.name}</TableCell>
+                        <TableCell className="font-mono text-xs">{v.patient_id}</TableCell>
                         <TableCell>{v.time}</TableCell>
-                        <TableCell><span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${VISIT_STATUS_COLORS[v.status]}`}>{VISIT_STATUS_LABELS[v.status]}</span></TableCell>
+                        <TableCell><span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${VISIT_STATUS_COLORS[v.status as keyof typeof VISIT_STATUS_COLORS] ?? 'bg-muted text-muted-foreground'}`}>{VISIT_STATUS_LABELS[v.status as keyof typeof VISIT_STATUS_LABELS] ?? v.status}</span></TableCell>
                         <TableCell>
                           {v.status !== 'completed' && <Button size="sm" variant="outline" onClick={() => checkOut(v.id)} className="text-xs gap-1"><LogOut className="h-3 w-3" /> Check Out</Button>}
                         </TableCell>
@@ -223,12 +242,12 @@ const ReceptionistDashboard: React.FC = () => {
                   <TableHeader><TableRow><TableHead>Patient</TableHead><TableHead>Hospital ID</TableHead><TableHead>Status</TableHead><TableHead>Action</TableHead></TableRow></TableHeader>
                   <TableBody>
                     {checkoutQueue.map(v => {
-                      const p = getPatient(v.patientId);
+                      const p = getPatient(v.patient_id);
                       return (
                         <TableRow key={v.id}>
-                          <TableCell className="font-medium">{p?.name}</TableCell>
-                          <TableCell className="font-mono text-xs">{p?.id}</TableCell>
-                          <TableCell><span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${VISIT_STATUS_COLORS[v.status]}`}>{VISIT_STATUS_LABELS[v.status]}</span></TableCell>
+                          <TableCell className="font-medium">{v.patient_name ?? p?.name}</TableCell>
+                          <TableCell className="font-mono text-xs">{v.patient_id}</TableCell>
+                          <TableCell><span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${VISIT_STATUS_COLORS[v.status as keyof typeof VISIT_STATUS_COLORS] ?? 'bg-muted text-muted-foreground'}`}>{VISIT_STATUS_LABELS[v.status as keyof typeof VISIT_STATUS_LABELS] ?? v.status}</span></TableCell>
                           <TableCell>
                             {v.status !== 'completed' && <Button size="sm" variant="destructive" onClick={() => checkOut(v.id)} className="text-xs gap-1"><LogOut className="h-3 w-3" /> Close Encounter</Button>}
                           </TableCell>

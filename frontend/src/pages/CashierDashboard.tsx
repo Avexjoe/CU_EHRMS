@@ -8,17 +8,21 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { VISITS, PATIENTS, Visit, VisitStatus } from '@/data/mockData';
+import { visitsApi, ApiVisit } from '@/lib/api';
+import { usePatients } from '@/hooks/usePatients';
+import { useVisits } from '@/hooks/useVisits';
 import { Banknote, Clock, CheckCircle, Printer, CreditCard, Smartphone, Wallet } from 'lucide-react';
 import UserAnalytics from '@/components/UserAnalytics';
 
 const CashierDashboard: React.FC = () => {
   const [activeView, setActiveView] = useState('pending');
-  const [visits, setVisits] = useState<Visit[]>([...VISITS]);
   const [paymentOpen, setPaymentOpen] = useState(false);
-  const [selectedVisitId, setSelectedVisitId] = useState<string | null>(null);
+  const [selectedVisitId, setSelectedVisitId] = useState<number | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<string>('');
   const [amountReceived, setAmountReceived] = useState('');
+
+  const { patients } = usePatients();
+  const { visits, refetch: refetchVisits } = useVisits();
 
   const sidebarLinks = [
     { label: 'Pending Payments', icon: <Clock className="h-4 w-4" />, active: activeView === 'pending', onClick: () => setActiveView('pending') },
@@ -26,29 +30,30 @@ const CashierDashboard: React.FC = () => {
     { label: 'Print Receipts', icon: <Printer className="h-4 w-4" />, active: activeView === 'receipts', onClick: () => setActiveView('receipts') },
   ];
 
-  const getPatient = (id: string) => PATIENTS.find(p => p.id === id);
+  const getPatient = (id: string) => patients.find(p => p.id === id);
 
+  const today = new Date().toISOString().split('T')[0];
   const pendingPayments = visits.filter(v => v.payment?.status === 'pending');
-  const paidToday = visits.filter(v => v.payment?.status === 'paid' && v.date === '2026-03-27');
-  const totalPending = pendingPayments.reduce((sum, v) => sum + (v.payment?.totalAmount || 0), 0);
-  const totalCollected = paidToday.reduce((sum, v) => sum + (v.payment?.amountPaid || 0), 0);
+  const paidToday = visits.filter(v => v.payment?.status === 'paid' && v.date === today);
+  const totalPending = pendingPayments.reduce((sum, v) => sum + parseFloat(String(v.payment?.total_amount ?? 0)), 0);
+  const totalCollected = paidToday.reduce((sum, v) => sum + parseFloat(String(v.payment?.amount_paid ?? 0)), 0);
 
   const escapeHtml = (value: string) =>
     value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
-  const printReceiptForVisit = (visitId: string) => {
+  const printReceiptForVisit = (visitId: number) => {
     const visit = visits.find(v => v.id === visitId);
     if (!visit?.payment || visit.payment.status !== 'paid') {
       toast.error('Receipt is only available for paid transactions');
       return;
     }
 
-    const patient = getPatient(visit.patientId);
-    const paidAt = visit.payment.paidAt ? new Date(visit.payment.paidAt) : null;
+    const patient = getPatient(visit.patient_id);
+    const paidAt = visit.payment.paid_at ? new Date(visit.payment.paid_at) : null;
     const receiptNo = `${visit.payment.id}-${visit.id}`;
 
     const lines = visit.payment.items
-      .map(i => `<tr><td>${escapeHtml(i.description)}</td><td style="text-align:right;">₵${i.amount.toFixed(2)}</td></tr>`)
+      .map(i => `<tr><td>${escapeHtml(i.description)}</td><td style="text-align:right;">₵${parseFloat(String(i.amount)).toFixed(2)}</td></tr>`)
       .join('');
 
     const html = `<!doctype html>
@@ -56,7 +61,7 @@ const CashierDashboard: React.FC = () => {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Receipt ${escapeHtml(receiptNo)}</title>
+    <title>Receipt ${escapeHtml(String(receiptNo))}</title>
     <style>
       :root { color-scheme: light; }
       body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Noto Sans", "Liberation Sans", sans-serif; margin: 0; padding: 24px; color: #0b0c0e; }
@@ -82,7 +87,7 @@ const CashierDashboard: React.FC = () => {
         </div>
         <div style="text-align:right;">
           <div class="muted">Receipt</div>
-          <div style="font-weight:700;">${escapeHtml(receiptNo)}</div>
+          <div style="font-weight:700;">${escapeHtml(String(receiptNo))}</div>
         </div>
       </div>
 
@@ -90,8 +95,8 @@ const CashierDashboard: React.FC = () => {
       <div class="row">
         <div>
           <div class="muted">Patient</div>
-          <div style="font-weight:600;">${escapeHtml(patient?.name ?? '—')}</div>
-          <div class="muted">${escapeHtml(patient?.id ?? visit.patientId)}</div>
+          <div style="font-weight:600;">${escapeHtml(visit.patient_name ?? patient?.name ?? '—')}</div>
+          <div class="muted">${escapeHtml(visit.patient_id)}</div>
         </div>
         <div style="text-align:right;">
           <div class="muted">Paid At</div>
@@ -109,11 +114,11 @@ const CashierDashboard: React.FC = () => {
           ${lines}
           <tr>
             <td class="total">Total</td>
-            <td class="total" style="text-align:right;">₵${visit.payment.totalAmount.toFixed(2)}</td>
+            <td class="total" style="text-align:right;">₵${parseFloat(String(visit.payment.total_amount)).toFixed(2)}</td>
           </tr>
           <tr>
             <td class="muted">Amount Paid</td>
-            <td class="muted" style="text-align:right;">₵${visit.payment.amountPaid.toFixed(2)}</td>
+            <td class="muted" style="text-align:right;">₵${parseFloat(String(visit.payment.amount_paid)).toFixed(2)}</td>
           </tr>
         </tbody>
       </table>
@@ -137,33 +142,33 @@ const CashierDashboard: React.FC = () => {
     w.document.close();
   };
 
-  const openPayment = (visitId: string) => {
+  const openPayment = (visitId: number) => {
     setSelectedVisitId(visitId);
     setPaymentMethod('');
     setAmountReceived('');
     setPaymentOpen(true);
   };
 
-  const markAsPaid = () => {
+  const markAsPaid = async () => {
     if (!selectedVisitId || !paymentMethod) return;
     const visit = visits.find(v => v.id === selectedVisitId);
-    const amount = Number(amountReceived) || visit?.payment?.totalAmount || 0;
+    const amount = Number(amountReceived) || parseFloat(String(visit?.payment?.total_amount ?? 0));
 
-    setVisits(prev => prev.map(v => v.id === selectedVisitId ? {
-      ...v,
-      payment: v.payment ? {
-        ...v.payment,
-        status: 'paid' as const,
-        method: paymentMethod as 'cash' | 'mobile_money' | 'card',
-        amountPaid: amount,
-        paidAt: new Date().toISOString(),
-      } : v.payment,
-    } : v));
-    setPaymentOpen(false);
-    const patient = visit ? getPatient(visit.patientId) : null;
-    toast.success(`Payment received from ${patient?.name ?? 'patient'}`, {
-      description: `GHS ${amount.toFixed(2)} via ${paymentMethod.replace('_', ' ')}`,
-    });
+    try {
+      await visitsApi.managePayment(selectedVisitId, {
+        amount_paid: amount,
+        method: paymentMethod,
+        status: 'paid',
+      });
+      setPaymentOpen(false);
+      const patient = visit ? getPatient(visit.patient_id) : null;
+      toast.success(`Payment received from ${visit?.patient_name ?? patient?.name ?? 'patient'}`, {
+        description: `GHS ${amount.toFixed(2)} via ${paymentMethod.replace('_', ' ')}`,
+      });
+      refetchVisits();
+    } catch (err: any) {
+      toast.error('Failed to process payment', { description: err?.message });
+    }
   };
 
   return (
@@ -206,7 +211,7 @@ const CashierDashboard: React.FC = () => {
               ) : (
                 <div className="space-y-3">
                   {pendingPayments.map(v => {
-                    const p = getPatient(v.patientId);
+                    const p = getPatient(v.patient_id);
                     return (
                       <div
                         key={v.id}
@@ -214,12 +219,12 @@ const CashierDashboard: React.FC = () => {
                         onClick={() => openPayment(v.id)}
                       >
                         <div>
-                          <p className="font-medium text-foreground">{p?.name}</p>
-                          <p className="text-xs text-muted-foreground">{p?.id}</p>
+                          <p className="font-medium text-foreground">{v.patient_name ?? p?.name}</p>
+                          <p className="text-xs text-muted-foreground">{v.patient_id}</p>
                           <p className="text-xs text-muted-foreground mt-1">{v.payment?.items.map(i => i.description).join(', ')}</p>
                         </div>
                         <div className="text-right">
-                          <p className="text-xl font-bold text-foreground">₵{(v.payment?.totalAmount || 0).toFixed(2)}</p>
+                          <p className="text-xl font-bold text-foreground">₵{parseFloat(String(v.payment?.total_amount ?? 0)).toFixed(2)}</p>
                           <span className="rounded-full bg-warning/10 text-warning px-2.5 py-0.5 text-xs font-medium">Pending</span>
                         </div>
                       </div>
@@ -243,13 +248,13 @@ const CashierDashboard: React.FC = () => {
                   <TableHeader><TableRow><TableHead>Patient</TableHead><TableHead>Amount</TableHead><TableHead>Method</TableHead><TableHead>Time</TableHead><TableHead>Action</TableHead></TableRow></TableHeader>
                   <TableBody>
                     {paidToday.map(v => {
-                      const p = getPatient(v.patientId);
+                      const p = getPatient(v.patient_id);
                       return (
                         <TableRow key={v.id}>
-                          <TableCell className="font-medium">{p?.name}</TableCell>
-                          <TableCell className="font-bold">₵{(v.payment?.amountPaid || 0).toFixed(2)}</TableCell>
+                          <TableCell className="font-medium">{v.patient_name ?? p?.name}</TableCell>
+                          <TableCell className="font-bold">₵{parseFloat(String(v.payment?.amount_paid ?? 0)).toFixed(2)}</TableCell>
                           <TableCell className="capitalize text-muted-foreground">{v.payment?.method?.replace('_', ' ')}</TableCell>
-                          <TableCell className="text-muted-foreground">{v.payment?.paidAt ? new Date(v.payment.paidAt).toLocaleTimeString() : '—'}</TableCell>
+                          <TableCell className="text-muted-foreground">{v.payment?.paid_at ? new Date(v.payment.paid_at).toLocaleTimeString() : '—'}</TableCell>
                           <TableCell>
                             <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => printReceiptForVisit(v.id)}>
                               <Printer className="h-3 w-3" /> Receipt
@@ -280,13 +285,13 @@ const CashierDashboard: React.FC = () => {
             <DialogHeader><DialogTitle>Process Payment</DialogTitle></DialogHeader>
             {(() => {
               const visit = visits.find(v => v.id === selectedVisitId);
-              const patient = visit ? getPatient(visit.patientId) : null;
+              const patient = visit ? getPatient(visit.patient_id) : null;
               return (
                 <div className="space-y-4 pt-2">
-                  {patient && (
+                  {(patient || visit) && (
                     <div className="rounded-xl border border-border/60 bg-muted/20 p-3 shadow-ray-ring">
-                      <p className="font-medium">{patient.name}</p>
-                      <p className="text-xs text-muted-foreground">{patient.id}</p>
+                      <p className="font-medium">{visit?.patient_name ?? patient?.name}</p>
+                      <p className="text-xs text-muted-foreground">{visit?.patient_id}</p>
                     </div>
                   )}
 
@@ -296,12 +301,12 @@ const CashierDashboard: React.FC = () => {
                     {visit?.payment?.items.map((item, i) => (
                       <div key={i} className="flex justify-between text-sm">
                         <span className="text-muted-foreground">{item.description}</span>
-                        <span className="font-medium">₵{item.amount.toFixed(2)}</span>
+                        <span className="font-medium">₵{parseFloat(String(item.amount)).toFixed(2)}</span>
                       </div>
                     ))}
                     <div className="flex justify-between text-sm border-t border-border/60 pt-2 font-bold">
                       <span>Total</span>
-                      <span>₵{(visit?.payment?.totalAmount || 0).toFixed(2)}</span>
+                      <span>₵{parseFloat(String(visit?.payment?.total_amount ?? 0)).toFixed(2)}</span>
                     </div>
                   </div>
 
@@ -330,7 +335,7 @@ const CashierDashboard: React.FC = () => {
 
                   <div className="space-y-1">
                     <Label className="text-xs">Amount Received (GHS)</Label>
-                    <Input type="number" placeholder={`${(visit?.payment?.totalAmount || 0).toFixed(2)}`} value={amountReceived} onChange={e => setAmountReceived(e.target.value)} />
+                    <Input type="number" placeholder={`${parseFloat(String(visit?.payment?.total_amount ?? 0)).toFixed(2)}`} value={amountReceived} onChange={e => setAmountReceived(e.target.value)} />
                   </div>
 
                   <Button
@@ -353,7 +358,7 @@ const CashierDashboard: React.FC = () => {
           </DialogContent>
         </Dialog>
 
-        <UserAnalytics roleField="all" title="Cashier Activity Overview" />
+        <UserAnalytics title="Cashier Activity Overview" />
       </div>
     </DashboardLayout>
   );

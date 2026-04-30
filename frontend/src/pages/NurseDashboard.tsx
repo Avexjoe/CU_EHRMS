@@ -10,18 +10,23 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { VISITS, PATIENTS, Visit, Patient, VisitPriority, VISIT_STATUS_LABELS, VISIT_STATUS_COLORS } from '@/data/mockData';
-import { MOCK_USERS } from '@/contexts/AuthContext';
+import { VISIT_STATUS_LABELS, VISIT_STATUS_COLORS } from '@/data/mockData';
+import { visitsApi, ApiVisit } from '@/lib/api';
+import { usePatients } from '@/hooks/usePatients';
+import { useVisits } from '@/hooks/useVisits';
 import { Users, Clock, CheckCircle, Heart, ListChecks, Activity, Search, UserPlus } from 'lucide-react';
 import UserAnalytics from '@/components/UserAnalytics';
+import { useStaff } from '@/hooks/useStaff';
 
 const NurseDashboard: React.FC = () => {
   const [activeView, setActiveView] = useState('patients');
-  const [visits, setVisits] = useState<Visit[]>([...VISITS]);
   const [vitalsOpen, setVitalsOpen] = useState(false);
-  const [selectedVisitId, setSelectedVisitId] = useState<string | null>(null);
+  const [selectedVisitId, setSelectedVisitId] = useState<number | null>(null);
   const [patientSearchQuery, setPatientSearchQuery] = useState('');
   const [patientSearchOpen, setPatientSearchOpen] = useState(false);
+
+  const { patients, refetch: refetchPatients } = usePatients();
+  const { visits, refetch: refetchVisits } = useVisits();
 
   const [vitalsForm, setVitalsForm] = useState({
     height: '', weight: '', bloodPressure: '', temperature: '', heartRate: '',
@@ -40,18 +45,18 @@ const NurseDashboard: React.FC = () => {
     { label: 'All Open Encounters', icon: <ListChecks className="h-4 w-4" />, active: activeView === 'open', onClick: () => setActiveView('open') },
   ];
 
-  const todayVisits = visits.filter(v => v.date === '2026-03-27');
+  const today = new Date().toISOString().split('T')[0];
+  const todayVisits = visits.filter(v => v.date === today);
   const waitingVisits = todayVisits.filter(v => v.status === 'waiting');
   const readyVisits = todayVisits.filter(v => v.status === 'ready_for_doctor');
-  const openVisits = todayVisits.filter(v => v.status !== 'completed');
 
-  const getPatient = (id: string) => PATIENTS.find(p => p.id === id);
-  const doctors = MOCK_USERS.filter(u => u.role === 'doctor');
+  const getPatient = (id: string) => patients.find(p => p.id === id);
+  const doctors = useStaff('doctor');
 
   // Search registered patients for adding to today's queue
   const normalizedSearch = patientSearchQuery.toLowerCase().trim();
   const searchedPatients = normalizedSearch.length > 0
-    ? PATIENTS.filter(p =>
+    ? patients.filter(p =>
         p.name.toLowerCase().includes(normalizedSearch) ||
         p.id.toLowerCase().includes(normalizedSearch) ||
         p.phone?.toLowerCase().includes(normalizedSearch) ||
@@ -61,30 +66,33 @@ const NurseDashboard: React.FC = () => {
       )
     : [];
 
-  const addPatientToQueue = (patient: Patient) => {
+  const addPatientToQueue = async (patient: typeof patients[0]) => {
     // Check if patient already has a visit today
-    const existingVisit = visits.find(v => v.patientId === patient.id && v.date === '2026-03-27');
+    const existingVisit = visits.find(v => v.patient_id === patient.id && v.date === today);
     if (existingVisit) {
       toast.error(`${patient.name} already has an encounter today`);
       return;
     }
-    const newVisit: Visit = {
-      id: `V${Date.now()}`,
-      patientId: patient.id,
-      date: '2026-03-27',
-      time: new Date().toTimeString().slice(0, 5),
-      status: 'waiting',
-      priority: 'normal',
-    };
-    setVisits(prev => [...prev, newVisit]);
-    setPatientSearchQuery('');
-    setPatientSearchOpen(false);
-    toast.success(`${patient.name} added to today's queue`, {
-      description: 'Patient is now waiting for vitals',
-    });
+    try {
+      await visitsApi.create({
+        patient_id: patient.id,
+        date: today,
+        time: new Date().toTimeString().slice(0, 5),
+        status: 'waiting',
+        priority: 'normal',
+      });
+      setPatientSearchQuery('');
+      setPatientSearchOpen(false);
+      toast.success(`${patient.name} added to today's queue`, {
+        description: 'Patient is now waiting for vitals',
+      });
+      refetchVisits();
+    } catch (err: any) {
+      toast.error('Failed to add patient to queue', { description: err?.message });
+    }
   };
 
-  const openVitals = (visitId: string) => {
+  const openVitals = (visitId: number) => {
     const visit = visits.find(v => v.id === visitId);
     setSelectedVisitId(visitId);
     if (visit?.vitals) {
@@ -92,7 +100,7 @@ const NurseDashboard: React.FC = () => {
         height: visit.vitals.height || '', weight: visit.vitals.weight || '',
         bloodPressure: visit.vitals.bloodPressure || '', temperature: visit.vitals.temperature || '',
         heartRate: visit.vitals.pulse || '', allergies: visit.allergies || '',
-        currentDrugs: visit.currentMedications || '', assignDoctor: visit.doctorId || '',
+        currentDrugs: visit.current_medications || '', assignDoctor: visit.doctor_id ? String(visit.doctor_id) : '',
       });
     } else {
       setVitalsForm({ height: '', weight: '', bloodPressure: '', temperature: '', heartRate: '', allergies: '', currentDrugs: '', assignDoctor: '' });
@@ -100,29 +108,32 @@ const NurseDashboard: React.FC = () => {
     setVitalsOpen(true);
   };
 
-  const saveVitals = () => {
+  const saveVitals = async () => {
     if (!selectedVisitId) return;
     const currentVisit = visits.find(v => v.id === selectedVisitId);
     const willMarkReady = currentVisit ? (currentVisit.status === 'waiting' || currentVisit.status === 'with_nurse') : true;
-    setVisits(prev => prev.map(v => v.id === selectedVisitId ? {
-      ...v,
-      status: (v.status === 'waiting' || v.status === 'with_nurse') ? 'ready_for_doctor' as const : v.status,
-      nurseId: '3',
-      doctorId: vitalsForm.assignDoctor ? vitalsForm.assignDoctor : v.doctorId,
-      vitals: {
-        height: vitalsForm.height, weight: vitalsForm.weight,
-        bloodPressure: vitalsForm.bloodPressure, temperature: vitalsForm.temperature,
+    try {
+      await visitsApi.update(selectedVisitId, {
+        status: willMarkReady ? 'ready_for_doctor' : currentVisit?.status,
+        blood_pressure: vitalsForm.bloodPressure,
+        temperature: vitalsForm.temperature,
         pulse: vitalsForm.heartRate,
-      },
-      allergies: vitalsForm.allergies,
-      currentMedications: vitalsForm.currentDrugs,
-    } : v));
-    setVitalsOpen(false);
-    const patient = currentVisit ? getPatient(currentVisit.patientId) : null;
-    toast.success(
-      willMarkReady ? `${patient?.name ?? 'Patient'} is now Ready for Doctor` : 'Vitals updated',
-      { description: 'Vitals saved successfully' },
-    );
+        weight: vitalsForm.weight,
+        height: vitalsForm.height,
+        allergies: vitalsForm.allergies,
+        current_medications: vitalsForm.currentDrugs,
+        ...(vitalsForm.assignDoctor ? { doctor: Number(vitalsForm.assignDoctor) } : {}),
+      });
+      setVitalsOpen(false);
+      const patient = currentVisit ? getPatient(currentVisit.patient_id) : null;
+      toast.success(
+        willMarkReady ? `${patient?.name ?? 'Patient'} is now Ready for Doctor` : 'Vitals updated',
+        { description: 'Vitals saved successfully' },
+      );
+      refetchVisits();
+    } catch (err: any) {
+      toast.error('Failed to save vitals', { description: err?.message });
+    }
   };
 
   const getTimeSince = (time: string) => {
@@ -134,14 +145,14 @@ const NurseDashboard: React.FC = () => {
     return `${Math.floor(diff / 60)}h ${diff % 60}m`;
   };
 
-  const renderVisitRow = (v: Visit, showVitalsAction = true) => {
-    const p = getPatient(v.patientId);
+  const renderVisitRow = (v: ApiVisit, showVitalsAction = true) => {
+    const p = getPatient(v.patient_id);
     const hasVitals = !!v.vitals;
     const actionLabel = hasVitals ? 'Open' : 'Record Vitals';
     return (
       <TableRow key={v.id}>
-        <TableCell className="font-medium">{p?.name ?? '—'}</TableCell>
-        <TableCell className="font-mono text-xs">{p?.id}</TableCell>
+        <TableCell className="font-medium">{v.patient_name ?? p?.name ?? '—'}</TableCell>
+        <TableCell className="font-mono text-xs">{v.patient_id}</TableCell>
         <TableCell className="text-muted-foreground">{getTimeSince(v.time)}</TableCell>
         <TableCell>
           <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${hasVitals ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'}`}>
@@ -149,8 +160,8 @@ const NurseDashboard: React.FC = () => {
           </span>
         </TableCell>
         <TableCell>
-          <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${VISIT_STATUS_COLORS[v.status]}`}>
-            {VISIT_STATUS_LABELS[v.status]}
+          <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${VISIT_STATUS_COLORS[v.status as keyof typeof VISIT_STATUS_COLORS] ?? 'bg-muted text-muted-foreground'}`}>
+            {VISIT_STATUS_LABELS[v.status as keyof typeof VISIT_STATUS_LABELS] ?? v.status}
           </span>
         </TableCell>
         <TableCell>
@@ -164,9 +175,14 @@ const NurseDashboard: React.FC = () => {
                   size="sm"
                   variant="outline"
                   className="text-xs gap-1 border-[hsla(151,59%,59%,0.25)] bg-[hsla(151,59%,59%,0.12)] text-success"
-                  onClick={() => {
-                    setVisits(prev => prev.map(vi => vi.id === v.id ? { ...vi, status: 'ready_for_doctor' as const } : vi));
-                    toast.success(`${p?.name} marked ready for doctor`);
+                  onClick={async () => {
+                    try {
+                      await visitsApi.update(v.id, { status: 'ready_for_doctor' });
+                      toast.success(`${v.patient_name ?? p?.name} marked ready for doctor`);
+                      refetchVisits();
+                    } catch {
+                      toast.error('Failed to update status');
+                    }
                   }}
                 >
                   <CheckCircle className="h-3 w-3" /> Assign
@@ -184,7 +200,7 @@ const NurseDashboard: React.FC = () => {
       <div className="space-y-6">
         {/* Greeting Section */}
         <div className="mb-6 pb-6 border-b border-border/60">
-          <h1 className="text-3xl font-bold text-foreground">{greeting}, Emily! 👋</h1>
+          <h1 className="text-3xl font-bold text-foreground">{greeting}, Abena! 👋</h1>
           <p className="text-sm text-muted-foreground mt-1">Welcome back to MedVault-Central</p>
         </div>
         <div>
@@ -224,7 +240,7 @@ const NurseDashboard: React.FC = () => {
                 <div className="rounded-xl border border-border/60 bg-card shadow-ray-float max-h-72 overflow-y-auto">
                   {searchedPatients.length > 0 ? (
                     searchedPatients.map(p => {
-                      const alreadyQueued = visits.some(v => v.patientId === p.id && v.date === '2026-03-27');
+                      const alreadyQueued = visits.some(v => v.patient_id === p.id && v.date === today);
                       return (
                         <div key={p.id} className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border/60 last:border-0 transition-opacity hover:opacity-60">
                           <div className="flex items-center gap-3">
@@ -305,7 +321,7 @@ const NurseDashboard: React.FC = () => {
             <DialogHeader><DialogTitle>Record Patient Vitals</DialogTitle></DialogHeader>
             {(() => {
               const visit = visits.find(v => v.id === selectedVisitId);
-              const patient = visit ? getPatient(visit.patientId) : null;
+              const patient = visit ? getPatient(visit.patient_id) : null;
               return (
                 <div className="space-y-5 pt-2">
                   {patient && (
@@ -358,7 +374,7 @@ const NurseDashboard: React.FC = () => {
           </DialogContent>
         </Dialog>
 
-        <UserAnalytics roleField="nurseId" userId="3" title="My Patient Activity" />
+        <UserAnalytics title="My Patient Activity" />
       </div>
     </DashboardLayout>
   );

@@ -8,17 +8,21 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { VISITS, PATIENTS, Visit, VisitStatus } from '@/data/mockData';
-import { MOCK_USERS } from '@/contexts/AuthContext';
+import { visitsApi, ApiVisit } from '@/lib/api';
+import { usePatients } from '@/hooks/usePatients';
+import { useVisits } from '@/hooks/useVisits';
 import { Pill, FileText, AlertTriangle, CheckCircle, ShoppingCart, LogOut, ClipboardList, Package } from 'lucide-react';
 import UserAnalytics from '@/components/UserAnalytics';
+import { useStaff } from '@/hooks/useStaff';
 
 const PharmacistDashboard: React.FC = () => {
   const [activeView, setActiveView] = useState('pending');
-  const [visits, setVisits] = useState<Visit[]>([...VISITS]);
   const [dispenseOpen, setDispenseOpen] = useState(false);
-  const [selectedVisitId, setSelectedVisitId] = useState<string | null>(null);
-  const [quantities, setQuantities] = useState<Record<string, number>>({});
+  const [selectedVisitId, setSelectedVisitId] = useState<number | null>(null);
+  const [quantities, setQuantities] = useState<Record<number, number>>({});
+
+  const { patients } = usePatients();
+  const { visits, refetch: refetchVisits } = useVisits();
 
   const sidebarLinks = [
     { label: 'Prescriptions to Dispense', icon: <ClipboardList className="h-4 w-4" />, active: activeView === 'pending', onClick: () => setActiveView('pending') },
@@ -26,16 +30,18 @@ const PharmacistDashboard: React.FC = () => {
     { label: 'External Prescriptions', icon: <FileText className="h-4 w-4" />, active: activeView === 'external', onClick: () => setActiveView('external') },
   ];
 
-  const getPatient = (id: string) => PATIENTS.find(p => p.id === id);
-  const getDoctor = (id?: string) => id ? MOCK_USERS.find(u => u.id === id) : null;
+  const getPatient = (id: string) => patients.find(p => p.id === id);
+  const allStaff = useStaff();
+  const getDoctor = (id?: number | null) => id ? allStaff.find(u => u.id === String(id)) : null;
 
+  const today = new Date().toISOString().split('T')[0];
   const pendingVisits = visits.filter(v => v.status === 'at_pharmacy' && v.prescriptions && v.prescriptions.length > 0);
-  const dispensedVisits = visits.filter(v => v.prescriptions?.some(rx => rx.dispensed) && v.date === '2026-03-27');
+  const dispensedVisits = visits.filter(v => v.prescriptions?.some(rx => rx.dispensed) && v.date === today);
 
-  const openDispense = (visitId: string) => {
+  const openDispense = (visitId: number) => {
     const visit = visits.find(v => v.id === visitId);
     if (visit?.prescriptions) {
-      const qtys: Record<string, number> = {};
+      const qtys: Record<number, number> = {};
       visit.prescriptions.forEach(rx => { qtys[rx.id] = rx.quantity || 1; });
       setQuantities(qtys);
     }
@@ -49,34 +55,52 @@ const PharmacistDashboard: React.FC = () => {
     });
   };
 
-  const dispenseAndPrice = () => {
+  const dispenseAndPrice = async () => {
     if (!selectedVisitId) return;
-    setVisits(prev => prev.map(v => v.id === selectedVisitId ? {
-      ...v,
-      status: 'pending_payment' as VisitStatus,
-      prescriptions: v.prescriptions?.map(rx => ({
-        ...rx, dispensed: true, quantity: quantities[rx.id] || rx.quantity,
-      })),
-      payment: {
-        id: `PAY${Date.now()}`,
-        totalAmount: v.prescriptions?.reduce((sum, rx) => sum + (rx.price || 0) * (quantities[rx.id] || rx.quantity || 1), 0) || 0,
-        amountPaid: 0,
-        status: 'pending' as const,
-        items: v.prescriptions?.map(rx => ({
-          description: `${rx.drug} ${rx.dosage} x${quantities[rx.id] || rx.quantity || 1}`,
-          amount: (rx.price || 0) * (quantities[rx.id] || rx.quantity || 1),
-        })) || [],
-      },
-    } : v));
-    setDispenseOpen(false);
-    toast.success('Prescriptions dispensed. Price sent to cashier.');
+    const visit = visits.find(v => v.id === selectedVisitId);
+    if (!visit) return;
+
+    try {
+      // Update visit status to pending_payment
+      await visitsApi.update(selectedVisitId, { status: 'pending_payment' });
+
+      // Mark each prescription as dispensed
+      for (const rx of visit.prescriptions ?? []) {
+        await visitsApi.updatePrescription(selectedVisitId, rx.id, {
+          dispensed: true,
+          quantity: quantities[rx.id] ?? rx.quantity,
+        });
+      }
+
+      // Create payment record
+      const totalAmount = (visit.prescriptions ?? []).reduce(
+        (sum, rx) => sum + (parseFloat(String(rx.price)) || 0) * (quantities[rx.id] ?? rx.quantity ?? 1),
+        0
+      );
+      const items = (visit.prescriptions ?? []).map(rx => ({
+        description: `${rx.drug} ${rx.dosage} x${quantities[rx.id] ?? rx.quantity ?? 1}`,
+        amount: (parseFloat(String(rx.price)) || 0) * (quantities[rx.id] ?? rx.quantity ?? 1),
+      }));
+      await visitsApi.managePayment(selectedVisitId, { total_amount: totalAmount, status: 'pending', items });
+
+      setDispenseOpen(false);
+      toast.success('Prescriptions dispensed. Price sent to cashier.');
+      refetchVisits();
+    } catch (err: any) {
+      toast.error('Failed to dispense prescriptions', { description: err?.message });
+    }
   };
 
-  const checkOutPatient = (visitId: string) => {
-    setVisits(prev => prev.map(v => v.id === visitId ? { ...v, status: 'completed' as VisitStatus } : v));
-    const visit = visits.find(v => v.id === visitId);
-    const patient = visit ? getPatient(visit.patientId) : null;
-    toast.info(`${patient?.name ?? 'Patient'} encounter closed at pharmacy.`);
+  const checkOutPatient = async (visitId: number) => {
+    try {
+      await visitsApi.update(visitId, { status: 'completed' });
+      const visit = visits.find(v => v.id === visitId);
+      const patient = visit ? getPatient(visit.patient_id) : null;
+      toast.info(`${visit?.patient_name ?? patient?.name ?? 'Patient'} encounter closed at pharmacy.`);
+      refetchVisits();
+    } catch (err: any) {
+      toast.error('Failed to check out patient', { description: err?.message });
+    }
   };
 
   return (
@@ -99,14 +123,14 @@ const PharmacistDashboard: React.FC = () => {
             ) : (
               <div className="space-y-4">
                 {pendingVisits.map(v => {
-                  const p = getPatient(v.patientId);
-                  const doc = getDoctor(v.doctorId);
+                  const p = getPatient(v.patient_id);
+                  const doc = getDoctor(v.doctor_id);
                   return (
                     <Card key={v.id}>
                       <CardHeader>
                         <CardTitle className="flex items-center justify-between text-base">
-                          <span className="flex items-center gap-2"><Pill className="h-4 w-4" /> {p?.name}</span>
-                          <span className="text-xs font-mono text-muted-foreground">{p?.id}</span>
+                          <span className="flex items-center gap-2"><Pill className="h-4 w-4" /> {v.patient_name ?? p?.name}</span>
+                          <span className="text-xs font-mono text-muted-foreground">{v.patient_id}</span>
                         </CardTitle>
                         {doc && (
                           <p className="text-sm text-muted-foreground">
@@ -127,17 +151,17 @@ const PharmacistDashboard: React.FC = () => {
                                 <TableCell>{rx.dosage}</TableCell>
                                 <TableCell>{rx.quantity || 1}</TableCell>
                                 <TableCell className="text-muted-foreground">{rx.frequency}, {rx.duration}</TableCell>
-                                <TableCell className="font-medium">₵{((rx.price || 0) * (rx.quantity || 1)).toFixed(2)}</TableCell>
+                                <TableCell className="font-medium">₵{((parseFloat(String(rx.price)) || 0) * (rx.quantity || 1)).toFixed(2)}</TableCell>
                               </TableRow>
                             ))}
                           </TableBody>
                         </Table>
 
                         {/* Current drugs for interaction check */}
-                        {v.currentMedications && (
+                        {v.current_medications && (
                           <div className="rounded-xl border border-border/60 bg-muted/20 p-3 shadow-ray-ring">
                             <p className="text-xs font-semibold text-muted-foreground mb-1">Patient's Current Drugs</p>
-                            <p className="text-sm">{v.currentMedications}</p>
+                            <p className="text-sm">{v.current_medications}</p>
                           </div>
                         )}
 
@@ -166,12 +190,12 @@ const PharmacistDashboard: React.FC = () => {
             ) : (
               <div className="space-y-3">
                 {dispensedVisits.map(v => {
-                  const p = getPatient(v.patientId);
+                  const p = getPatient(v.patient_id);
                   return (
                     <Card key={v.id}>
                       <CardContent className="p-4 flex items-center justify-between">
                         <div>
-                          <p className="font-medium">{p?.name}</p>
+                          <p className="font-medium">{v.patient_name ?? p?.name}</p>
                           <p className="text-xs text-muted-foreground">{v.prescriptions?.map(rx => rx.drug).join(', ')}</p>
                         </div>
                         <span className="rounded-full bg-success/10 text-success px-2.5 py-0.5 text-xs font-medium">Dispensed</span>
@@ -190,14 +214,14 @@ const PharmacistDashboard: React.FC = () => {
             <DialogHeader><DialogTitle>Dispense Prescriptions</DialogTitle></DialogHeader>
             {(() => {
               const visit = visits.find(v => v.id === selectedVisitId);
-              const patient = visit ? getPatient(visit.patientId) : null;
+              const patient = visit ? getPatient(visit.patient_id) : null;
               const isPaid = visit?.payment?.status === 'paid';
               return (
                 <div className="space-y-4 pt-2">
-                  {patient && (
+                  {(patient || visit) && (
                     <div className="rounded-xl border border-border/60 bg-muted/20 p-3 shadow-ray-ring">
-                      <p className="font-medium">{patient.name}</p>
-                      <p className="text-xs text-muted-foreground">{patient.id}</p>
+                      <p className="font-medium">{visit?.patient_name ?? patient?.name}</p>
+                      <p className="text-xs text-muted-foreground">{visit?.patient_id}</p>
                     </div>
                   )}
 
@@ -216,7 +240,7 @@ const PharmacistDashboard: React.FC = () => {
                       </div>
                       <div className="flex items-center gap-2">
                         <Label className="text-xs">Qty:</Label>
-                        <Input className="w-16 h-8 text-center" type="number" value={quantities[rx.id] || rx.quantity || 1}
+                        <Input className="w-16 h-8 text-center" type="number" value={quantities[rx.id] ?? rx.quantity ?? 1}
                           onChange={e => setQuantities(prev => ({ ...prev, [rx.id]: Number(e.target.value) }))} />
                       </div>
                     </div>
@@ -231,7 +255,7 @@ const PharmacistDashboard: React.FC = () => {
           </DialogContent>
         </Dialog>
 
-        <UserAnalytics roleField="all" title="Pharmacy Activity Overview" />
+        <UserAnalytics title="Pharmacy Activity Overview" />
       </div>
     </DashboardLayout>
   );
